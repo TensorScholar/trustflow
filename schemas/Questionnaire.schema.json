@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "DocumentFormat": {
+      "enum": [
+        "xlsx",
+        "docx",
+        "csv",
+        "json",
+        "md",
+        "pdf"
+      ],
+      "title": "DocumentFormat",
+      "type": "string"
+    },
+    "Question": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/QuestionLocation"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/QuestionSensitivity",
+          "default": "standard"
+        },
+        "text": {
+          "maxLength": 20000,
+          "minLength": 2,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "location"
+      ],
+      "title": "Question",
+      "type": "object"
+    },
+    "QuestionLocation": {
+      "additionalProperties": false,
+      "properties": {
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cell"
+        },
+        "format": {
+          "$ref": "#/$defs/DocumentFormat"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "paragraph": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paragraph"
+        },
+        "row": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row"
+        },
+        "sheet": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sheet"
+        }
+      },
+      "required": [
+        "format"
+      ],
+      "title": "QuestionLocation",
+      "type": "object"
+    },
+    "QuestionSensitivity": {
+      "enum": [
+        "standard",
+        "security",
+        "legal",
+        "privacy",
+        "financial"
+      ],
+      "title": "QuestionSensitivity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "$ref": "#/$defs/DocumentFormat"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "imported_at": {
+      "format": "date-time",
+      "title": "Imported At",
+      "type": "string"
+    },
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/Question"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "source_path": {
+      "title": "Source Path",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "source_path",
+    "format",
+    "questions"
+  ],
+  "title": "Questionnaire",
+  "type": "object"
+}

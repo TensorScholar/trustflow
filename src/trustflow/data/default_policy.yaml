@@ -1,0 +1,8 @@
+minimum_evidence_score: 0.28
+minimum_answer_confidence: 0.62
+maximum_source_age_days: 365
+sensitive_requires_review: true
+require_approved_sources: true
+maximum_file_bytes: 20000000
+maximum_archive_members: 5000
+maximum_uncompressed_bytes: 100000000

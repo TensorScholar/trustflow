@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trustflow"
+version = "0.1.0rc1"
+description = "Evidence-governed RFP and security questionnaire automation."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{name = "Mohammad Atashi"}]
+keywords = ["rfp", "security-questionnaire", "rag", "presales", "compliance"]
+dependencies = [
+  "openpyxl>=3.1,<4",
+  "pydantic>=2.10,<3",
+  "pypdf>=5,<7",
+  "python-docx>=1.1,<2",
+  "PyYAML>=6,<7",
+  "rich>=13,<15",
+  "typer>=0.16,<1",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.115,<1", "python-multipart>=0.0.20,<1", "uvicorn>=0.34,<1"]
+dev = [
+  "coverage>=7.6,<8",
+  "httpx>=0.27,<1",
+  "mypy>=1.14,<2",
+  "pip-audit>=2.8,<3",
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+trustflow = "trustflow.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/TensorScholar/trustflow"
+Issues = "https://github.com/TensorScholar/trustflow/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+trustflow = ["py.typed", "data/*.yaml", "data/*.json"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --disable-warnings"
+testpaths = ["tests"]
+markers = [
+  "integration: integration tests",
+  "security: document safety and adversarial tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["trustflow"]
+omit = ["src/trustflow/__main__.py", "src/trustflow/cli.py", "src/trustflow/web/app.py"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "S"]
+ignore = ["S101"]
+per-file-ignores = {"tests/**/*.py" = ["S101", "S105", "S106"], "scripts/**/*.py" = ["S603", "S607"]}
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["trustflow"]
+mypy_path = "src"
+warn_unused_configs = true

@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "SourceClassification": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential"
+      ],
+      "title": "SourceClassification",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approved": {
+      "default": true,
+      "title": "Approved",
+      "type": "boolean"
+    },
+    "classification": {
+      "$ref": "#/$defs/SourceClassification",
+      "default": "internal"
+    },
+    "content": {
+      "minLength": 1,
+      "title": "Content",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "owner": {
+      "title": "Owner",
+      "type": "string"
+    },
+    "source_uri": {
+      "title": "Source Uri",
+      "type": "string"
+    },
+    "tags": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "valid_until": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Valid Until"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "owner",
+    "version",
+    "content",
+    "source_uri"
+  ],
+  "title": "SourceDocument",
+  "type": "object"
+}

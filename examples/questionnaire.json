@@ -1,0 +1,7 @@
+{
+  "questions": [
+    "Do you encrypt customer data at rest?",
+    "Do you provide legal indemnity?",
+    "What is your favorite color?"
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "$defs": {
+    "ReviewState": {
+      "enum": [
+        "approved",
+        "rejected",
+        "edited"
+      ],
+      "title": "ReviewState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "answer_id": {
+      "title": "Answer Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "final_text": {
+      "title": "Final Text",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+    },
+    "reviewer": {
+      "title": "Reviewer",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/ReviewState"
+    }
+  },
+  "required": [
+    "answer_id",
+    "reviewer",
+    "state",
+    "final_text"
+  ],
+  "title": "ReviewDecision",
+  "type": "object"
+}
