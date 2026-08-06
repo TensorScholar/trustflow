@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from trustflow._version import __version__
@@ -11,9 +12,6 @@ from trustflow.domain.errors import TrustFlowError, UnsafeDocumentError
 from trustflow.domain.models import Questionnaire, ReviewState, SourceDocument
 
 logger = logging.getLogger(__name__)
-
-from fastapi import FastAPI, File, HTTPException, UploadFile
-
 
 
 class ReviewRequest(BaseModel):
@@ -34,7 +32,7 @@ def _public_questionnaire(item: Questionnaire) -> dict[str, object]:
 def create_app(
     database: str | Path = "trustflow.db",
     upload_dir: str | Path = ".trustflow/uploads",
-) -> object:
+) -> FastAPI:
     service = build_service(database)
     upload_root = Path(upload_dir).expanduser().resolve()
     upload_root.mkdir(parents=True, exist_ok=True)
@@ -100,7 +98,7 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/questionnaires/{identifier}/metrics")
-    def metrics(identifier: str) -> dict[str, object]:
+    def metrics(identifier: str) -> dict[str, float | int]:
         return service.metrics(identifier)
 
     return app

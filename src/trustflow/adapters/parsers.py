@@ -20,8 +20,8 @@ from trustflow.domain.models import (
     DocumentFormat,
     PolicySettings,
     Question,
-    Questionnaire,
     QuestionLocation,
+    Questionnaire,
 )
 
 
@@ -115,14 +115,14 @@ class ParserRegistry:
             workbook.close()
 
     def _docx(self, path: Path) -> list[Question]:
-        document = Document(path)
+        document = Document(str(path))
         questions: list[Question] = []
         for index, paragraph in enumerate(document.paragraphs):
             text = paragraph.text.strip()
             if text.endswith("?"):
                 questions.append(
                     _question(
-                        f"q{len(questions)+1}",
+                        f"q{len(questions) + 1}",
                         text,
                         QuestionLocation(format=DocumentFormat.DOCX, paragraph=index),
                     )
@@ -138,7 +138,7 @@ class ParserRegistry:
                 if cleaned.endswith("?"):
                     questions.append(
                         _question(
-                            f"q{len(questions)+1}",
+                            f"q{len(questions) + 1}",
                             cleaned,
                             QuestionLocation(
                                 format=DocumentFormat.DOCX,
@@ -156,7 +156,7 @@ class ParserRegistry:
                     if value.strip().endswith("?"):
                         questions.append(
                             _question(
-                                f"q{len(questions)+1}",
+                                f"q{len(questions) + 1}",
                                 value,
                                 QuestionLocation(
                                     format=DocumentFormat.CSV,
@@ -183,7 +183,7 @@ class ParserRegistry:
                 raise InvalidQuestionnaireError("question must be a string")
             questions.append(
                 _question(
-                    f"q{index+1}",
+                    f"q{index + 1}",
                     text,
                     QuestionLocation(format=DocumentFormat.JSON, key=str(index)),
                 )
@@ -191,13 +191,13 @@ class ParserRegistry:
         return questions
 
     def _markdown(self, path: Path) -> list[Question]:
-        questions = []
+        questions: list[Question] = []
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             text = line.lstrip("#-* 0123456789.").strip()
             if text.endswith("?"):
                 questions.append(
                     _question(
-                        f"q{len(questions)+1}",
+                        f"q{len(questions) + 1}",
                         text,
                         QuestionLocation(format=DocumentFormat.MARKDOWN, row=line_number),
                     )
@@ -208,7 +208,7 @@ class ParserRegistry:
         reader = PdfReader(path)
         if len(reader.pages) > self.policy.maximum_pdf_pages:
             raise InvalidQuestionnaireError("PDF exceeds configured page limit")
-        questions = []
+        questions: list[Question] = []
         for page_number, page in enumerate(reader.pages, start=1):
             text = page.extract_text() or ""
             for line in text.splitlines():
@@ -216,7 +216,7 @@ class ParserRegistry:
                 if cleaned.endswith("?"):
                     questions.append(
                         _question(
-                            f"q{len(questions)+1}",
+                            f"q{len(questions) + 1}",
                             cleaned,
                             QuestionLocation(format=DocumentFormat.PDF, row=page_number),
                         )

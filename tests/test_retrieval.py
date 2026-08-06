@@ -26,16 +26,22 @@ def test_retrieve_matching_source() -> None:
 
 
 def test_unapproved_source_excluded() -> None:
-    assert retrieve(
-        "encryption",
-        [source("x", "encryption", approved=False)],
-        PolicySettings(),
-    ) == ()
+    assert (
+        retrieve(
+            "encryption",
+            [source("x", "encryption", approved=False)],
+            PolicySettings(),
+        )
+        == ()
+    )
 
 
 def test_old_source_excluded() -> None:
-    assert retrieve(
-        "encryption",
-        [source("x", "encryption", updated_at=datetime.now(UTC) - timedelta(days=500))],
-        PolicySettings(maximum_source_age_days=30),
-    ) == ()
+    assert (
+        retrieve(
+            "encryption",
+            [source("x", "encryption", updated_at=datetime.now(UTC) - timedelta(days=500))],
+            PolicySettings(maximum_source_age_days=30),
+        )
+        == ()
+    )

@@ -294,8 +294,7 @@ class TrustFlowService:
             citation_total += len(case.expected_source_ids)
             unsupported += bool(text and not evidence and status is AnswerStatus.ANSWERED)
             sensitive_auto += (
-                case.question.sensitivity.value != "standard"
-                and status is AnswerStatus.ANSWERED
+                case.question.sensitivity.value != "standard" and status is AnswerStatus.ANSWERED
             )
         total = len(cases)
         return EvaluationSummary(

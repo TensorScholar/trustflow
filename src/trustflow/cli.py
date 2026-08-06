@@ -149,6 +149,7 @@ def serve(
 ) -> None:
     try:
         import uvicorn
+
         from trustflow.web.app import create_app
     except ImportError as exc:
         raise typer.BadParameter("Install with: pip install 'trustflow[web]'") from exc

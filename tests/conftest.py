@@ -37,8 +37,7 @@ def service() -> TrustFlowService:
             owner="legal",
             version="1",
             content=(
-                "Indemnity terms require legal review and are defined "
-                "in the governing contract."
+                "Indemnity terms require legal review and are defined in the governing contract."
             ),
             source_uri="policy://legal",
             updated_at=datetime.now(UTC),

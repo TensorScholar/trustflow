@@ -28,11 +28,56 @@ def test_xlsx_export_neutralizes_formula(tmp_path) -> None:
     output = tmp_path / "out.xlsx"
     ExporterRegistry().export(
         questionnaire,
-        [answer(questionnaire.id, "q1", "=HYPERLINK(\"bad\")")],
+        [answer(questionnaire.id, "q1", '=HYPERLINK("bad")')],
         {},
         output,
     )
     assert load_workbook(output).active["B1"].value.startswith("'")
+
+
+def test_xlsx_export_rejects_active_chartsheet_without_sheet_location(
+    tmp_path,
+) -> None:
+    import pytest
+    from openpyxl.chart import BarChart, Reference
+
+    from trustflow.domain.errors import UnsafeExportError
+
+    source = tmp_path / "active-chartsheet.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    assert worksheet is not None
+    worksheet["A1"] = "Question?"
+    worksheet["B1"] = 1
+    worksheet["B2"] = 2
+
+    chartsheet = workbook.create_chartsheet("Chart")
+    chart = BarChart()
+    chart.add_data(Reference(worksheet, min_col=2, min_row=1, max_row=2))
+    chartsheet.add_chart(chart)
+    workbook.active = 1
+    workbook.save(source)
+    workbook.close()
+
+    questionnaire = ParserRegistry().parse(source)
+    question = questionnaire.questions[0]
+    questionnaire = questionnaire.model_copy(
+        update={
+            "questions": (
+                question.model_copy(
+                    update={"location": question.location.model_copy(update={"sheet": None})}
+                ),
+            )
+        }
+    )
+
+    with pytest.raises(UnsafeExportError, match="not a worksheet"):
+        ExporterRegistry().export(
+            questionnaire,
+            [answer(questionnaire.id, question.id, "Answer")],
+            {},
+            tmp_path / "out.xlsx",
+        )
 
 
 def test_csv_export(tmp_path) -> None:
@@ -87,7 +132,7 @@ def test_formula_neutralization_with_leading_whitespace(tmp_path) -> None:
     output = tmp_path / "out.csv"
     ExporterRegistry().export(
         questionnaire,
-        [answer(questionnaire.id, "q1", "\t=HYPERLINK(\"bad\")")],
+        [answer(questionnaire.id, "q1", '\t=HYPERLINK("bad")')],
         {},
         output,
     )
