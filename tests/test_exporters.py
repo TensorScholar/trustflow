@@ -28,7 +28,7 @@ def test_xlsx_export_neutralizes_formula(tmp_path) -> None:
     output = tmp_path / "out.xlsx"
     ExporterRegistry().export(
         questionnaire,
-        [answer(questionnaire.id, "q1", "=HYPERLINK(\"bad\")")],
+        [answer(questionnaire.id, "q1", '=HYPERLINK("bad")')],
         {},
         output,
     )
@@ -87,7 +87,7 @@ def test_formula_neutralization_with_leading_whitespace(tmp_path) -> None:
     output = tmp_path / "out.csv"
     ExporterRegistry().export(
         questionnaire,
-        [answer(questionnaire.id, "q1", "\t=HYPERLINK(\"bad\")")],
+        [answer(questionnaire.id, "q1", '\t=HYPERLINK("bad")')],
         {},
         output,
     )

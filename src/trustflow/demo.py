@@ -33,8 +33,7 @@ def run_demo(directory: str | Path | None = None) -> dict[str, object]:
             owner="security",
             version="2026.1",
             content=(
-                "Customer data is encrypted at rest using AES-256 "
-                "and in transit using TLS 1.3."
+                "Customer data is encrypted at rest using AES-256 and in transit using TLS 1.3."
             ),
             source_uri="policy://security/encryption",
             updated_at=datetime.now(UTC),

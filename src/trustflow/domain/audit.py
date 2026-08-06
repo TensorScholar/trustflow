@@ -1,7 +1,7 @@
 import hashlib
 import json
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Iterable
 
 from trustflow.domain.errors import IntegrityError
 from trustflow.domain.models import AuditEvent

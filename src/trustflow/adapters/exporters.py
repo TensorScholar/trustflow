@@ -10,6 +10,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
 from docx import Document
 from docx.document import Document as DocumentObject
@@ -19,8 +20,8 @@ from openpyxl import load_workbook
 from trustflow.adapters.safety import neutralize_spreadsheet_formula
 from trustflow.domain.errors import (
     InvalidTransitionError,
-    UnsupportedFormatError,
     UnsafeExportError,
+    UnsupportedFormatError,
 )
 from trustflow.domain.models import (
     AnswerStatus,
@@ -127,7 +128,7 @@ def _docx_paragraph(document: DocumentObject, key: str) -> Paragraph:
             if cell is None:
                 raise UnsafeExportError(f"invalid DOCX paragraph location: {key}")
             try:
-                return cell.paragraphs[index]
+                return cast(Paragraph, cell.paragraphs[index])
             except IndexError as exc:
                 raise UnsafeExportError(f"DOCX paragraph location no longer exists: {key}") from exc
         else:
@@ -187,7 +188,13 @@ class ExporterRegistry:
             try:
                 for question in questionnaire.questions:
                     answer = answers[question.id]
-                    sheet = workbook[question.location.sheet or workbook.active.title]
+                    sheet_name = question.location.sheet
+                    if sheet_name is None:
+                        active_sheet = workbook.active
+                        if active_sheet is None:
+                            raise UnsafeExportError("XLSX workbook has no active worksheet")
+                        sheet_name = active_sheet.title
+                    sheet = workbook[sheet_name]
                     cell = sheet[question.location.cell or "A1"]
                     target = sheet.cell(row=cell.row, column=cell.column + 1)
                     target.value = neutralize_spreadsheet_formula(
@@ -205,7 +212,7 @@ class ExporterRegistry:
         source: Path,
         destination: Path,
     ) -> None:
-        document = Document(source)
+        document = Document(str(source))
         for question in questionnaire.questions:
             answer = answers[question.id]
             text = _final_text(answer, reviews.get(answer.id))
@@ -220,7 +227,7 @@ class ExporterRegistry:
                 raise UnsafeExportError("DOCX question has no writable location")
             paragraph.add_run(f"\nAnswer: {text}")
         with _atomic_destination(destination) as temporary:
-            document.save(temporary)
+            document.save(str(temporary))
 
     def _csv(
         self,
@@ -243,9 +250,11 @@ class ExporterRegistry:
             rows[row][column] = neutralize_spreadsheet_formula(
                 _final_text(answer, reviews.get(answer.id))
             )
-        with _atomic_destination(destination) as temporary:
-            with temporary.open("w", newline="", encoding="utf-8") as handle:
-                csv.writer(handle).writerows(rows)
+        with (
+            _atomic_destination(destination) as temporary,
+            temporary.open("w", newline="", encoding="utf-8") as handle,
+        ):
+            csv.writer(handle).writerows(rows)
 
     def _json(
         self,

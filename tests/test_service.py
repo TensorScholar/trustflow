@@ -3,7 +3,7 @@ import json
 import pytest
 
 from trustflow.domain.errors import InvalidTransitionError, NotFoundError
-from trustflow.domain.models import AnswerStatus, ReviewState, SourceDocument
+from trustflow.domain.models import AnswerStatus, ReviewState
 
 
 def questionnaire_file(tmp_path):
