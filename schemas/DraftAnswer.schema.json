@@ -19,6 +19,7 @@
           "type": "string"
         },
         "owner": {
+          "minLength": 1,
           "title": "Owner",
           "type": "string"
         },
@@ -29,18 +30,22 @@
           "type": "number"
         },
         "source_id": {
+          "minLength": 1,
           "title": "Source Id",
           "type": "string"
         },
         "source_title": {
+          "minLength": 1,
           "title": "Source Title",
           "type": "string"
         },
         "source_uri": {
+          "minLength": 1,
           "title": "Source Uri",
           "type": "string"
         },
         "source_version": {
+          "minLength": 1,
           "title": "Source Version",
           "type": "string"
         },
@@ -103,10 +108,12 @@
       "type": "string"
     },
     "question_id": {
+      "minLength": 1,
       "title": "Question Id",
       "type": "string"
     },
     "questionnaire_id": {
+      "minLength": 1,
       "title": "Questionnaire Id",
       "type": "string"
     },

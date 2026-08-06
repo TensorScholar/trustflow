@@ -5,4 +5,8 @@ sensitive_requires_review: true
 require_approved_sources: true
 maximum_file_bytes: 20000000
 maximum_archive_members: 5000
+maximum_member_bytes: 25000000
 maximum_uncompressed_bytes: 100000000
+maximum_compression_ratio: 100.0
+maximum_pdf_pages: 500
+maximum_questions: 10000

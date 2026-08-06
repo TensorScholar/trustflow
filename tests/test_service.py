@@ -29,6 +29,21 @@ def test_end_to_end(service, tmp_path) -> None:
     statuses = {item.status for item in answers}
     assert AnswerStatus.REVIEW_REQUIRED in statuses
     assert AnswerStatus.UNANSWERABLE in statuses
+    for answer in answers:
+        if answer.status is AnswerStatus.UNANSWERABLE:
+            service.review(
+                answer.id,
+                reviewer="human",
+                state=ReviewState.EDITED,
+                final_text="Not applicable.",
+            )
+        elif answer.status is not AnswerStatus.ANSWERED:
+            service.review(
+                answer.id,
+                reviewer="human",
+                state=ReviewState.APPROVED,
+                final_text=answer.text,
+            )
     output = tmp_path / "completed.json"
     result = service.export(questionnaire.id, output)
     assert output.exists()
@@ -79,3 +94,35 @@ def test_impact_scan(service, tmp_path) -> None:
     service.ingest_source(existing.model_copy(update={"version": "2"}))
     findings = service.impact_scan()
     assert any(item.source_id == "security" for item in findings)
+
+
+def test_export_blocks_unreviewed_answers(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(questionnaire_file(tmp_path))
+    service.draft(questionnaire.id)
+    with pytest.raises(InvalidTransitionError, match="missing_review"):
+        service.export(questionnaire.id, tmp_path / "blocked.json")
+
+
+def test_export_blocks_rejected_review(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(questionnaire_file(tmp_path))
+    answer = service.draft(questionnaire.id)[0]
+    service.review(
+        answer.id,
+        reviewer="security",
+        state=ReviewState.REJECTED,
+        note="Evidence is insufficient.",
+    )
+    with pytest.raises(InvalidTransitionError, match="rejected"):
+        service.export(questionnaire.id, tmp_path / "blocked.json")
+
+
+def test_draft_is_not_duplicated(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(questionnaire_file(tmp_path))
+    service.draft(questionnaire.id)
+    with pytest.raises(InvalidTransitionError, match="already been drafted"):
+        service.draft(questionnaire.id)
+
+
+def test_metrics_requires_questionnaire(service) -> None:
+    with pytest.raises(NotFoundError, match="questionnaire not found"):
+        service.metrics("missing")

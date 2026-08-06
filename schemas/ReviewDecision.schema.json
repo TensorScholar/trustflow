@@ -13,6 +13,7 @@
   "additionalProperties": false,
   "properties": {
     "answer_id": {
+      "minLength": 1,
       "title": "Answer Id",
       "type": "string"
     },
@@ -22,6 +23,8 @@
       "type": "string"
     },
     "final_text": {
+      "default": "",
+      "maxLength": 100000,
       "title": "Final Text",
       "type": "string"
     },
@@ -31,10 +34,13 @@
     },
     "note": {
       "default": "",
+      "maxLength": 20000,
       "title": "Note",
       "type": "string"
     },
     "reviewer": {
+      "maxLength": 320,
+      "minLength": 1,
       "title": "Reviewer",
       "type": "string"
     },
@@ -45,8 +51,7 @@
   "required": [
     "answer_id",
     "reviewer",
-    "state",
-    "final_text"
+    "state"
   ],
   "title": "ReviewDecision",
   "type": "object"

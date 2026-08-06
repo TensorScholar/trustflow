@@ -78,3 +78,81 @@ def test_json_export(tmp_path) -> None:
         output,
     )
     assert json.loads(output.read_text(encoding="utf-8"))[0]["answer"] == "Answer"
+
+
+def test_formula_neutralization_with_leading_whitespace(tmp_path) -> None:
+    source = tmp_path / "q.csv"
+    source.write_text("Question?\n", encoding="utf-8")
+    questionnaire = ParserRegistry().parse(source)
+    output = tmp_path / "out.csv"
+    ExporterRegistry().export(
+        questionnaire,
+        [answer(questionnaire.id, "q1", "\t=HYPERLINK(\"bad\")")],
+        {},
+        output,
+    )
+    assert "'\t=HYPERLINK" in output.read_text(encoding="utf-8")
+
+
+def test_export_refuses_to_overwrite_source(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import UnsafeExportError
+
+    source = tmp_path / "q.json"
+    original = '{"questions":["Question?"]}'
+    source.write_text(original, encoding="utf-8")
+    questionnaire = ParserRegistry().parse(source)
+    with pytest.raises(UnsafeExportError, match="must differ"):
+        ExporterRegistry().export(
+            questionnaire,
+            [answer(questionnaire.id, "q1", "Answer")],
+            {},
+            source,
+        )
+    assert source.read_text(encoding="utf-8") == original
+
+
+def test_docx_nested_table_round_trip(tmp_path) -> None:
+    source = tmp_path / "nested.docx"
+    document = Document()
+    outer = document.add_table(rows=1, cols=1)
+    nested = outer.cell(0, 0).add_table(rows=1, cols=1)
+    nested.cell(0, 0).paragraphs[0].text = "Nested question?"
+    document.save(source)
+    questionnaire = ParserRegistry().parse(source)
+    assert len(questionnaire.questions) == 1
+    output = tmp_path / "nested-out.docx"
+    ExporterRegistry().export(
+        questionnaire,
+        [answer(questionnaire.id, "q1", "Nested answer")],
+        {},
+        output,
+    )
+    reopened = Document(output)
+    nested_output = reopened.tables[0].cell(0, 0).tables[0].cell(0, 0).text
+    assert "Nested answer" in nested_output
+
+
+def test_exporter_defense_in_depth_blocks_unreviewed_status(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import InvalidTransitionError
+
+    source = tmp_path / "q.json"
+    source.write_text('{"questions":["Sensitive question?"]}', encoding="utf-8")
+    questionnaire = ParserRegistry().parse(source)
+    unresolved = DraftAnswer(
+        questionnaire_id=questionnaire.id,
+        question_id="q1",
+        text="Draft",
+        status=AnswerStatus.REVIEW_REQUIRED,
+        confidence=0.8,
+    )
+    with pytest.raises(InvalidTransitionError, match="unresolved"):
+        ExporterRegistry().export(
+            questionnaire,
+            [unresolved],
+            {},
+            tmp_path / "out.json",
+        )

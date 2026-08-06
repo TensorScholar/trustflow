@@ -10,7 +10,8 @@ from rich.table import Table
 from trustflow._version import __version__
 from trustflow.application.bootstrap import build_service
 from trustflow.demo import run_demo
-from trustflow.domain.models import SourceDocument
+from trustflow.domain.errors import InvalidTransitionError
+from trustflow.domain.models import ReviewState, SourceDocument
 
 app = typer.Typer(help="Evidence-governed RFP and security questionnaire automation.")
 console = Console()
@@ -70,19 +71,56 @@ def process(
     service = build_service(database)
     imported = service.import_questionnaire(questionnaire)
     answers = service.draft(imported.id)
-    result = service.export(imported.id, output)
-    table = Table(title="TrustFlow result")
+    table = Table(title="TrustFlow draft result")
     table.add_column("Questions")
     table.add_column("Answered")
     table.add_column("Review")
     table.add_column("Unanswerable")
     table.add_row(
         str(len(answers)),
-        str(result.answered),
-        str(result.review_required),
-        str(result.unanswerable),
+        str(sum(item.status.value == "answered" for item in answers)),
+        str(sum(item.status.value in {"review_required", "conflict"} for item in answers)),
+        str(sum(item.status.value in {"unanswerable", "stale"} for item in answers)),
     )
     console.print(table)
+    try:
+        result = service.export(imported.id, output)
+    except InvalidTransitionError as exc:
+        console.print(f"[red]Export blocked:[/red] {exc}")
+        console.print("Review unresolved answers, then use the export command.")
+        raise typer.Exit(code=2) from exc
+    console.print(f"exported to {result.output_path}")
+
+
+@app.command("review-answer")
+def review_answer(
+    database: Annotated[Path, typer.Option(exists=True, readable=True)],
+    answer_id: Annotated[str, typer.Argument()],
+    reviewer: Annotated[str, typer.Option()],
+    state: Annotated[ReviewState, typer.Option()] = ReviewState.APPROVED,
+    final_text: Annotated[str, typer.Option()] = "",
+    note: Annotated[str, typer.Option()] = "",
+) -> None:
+    service = build_service(database)
+    review = service.review(
+        answer_id,
+        reviewer=reviewer,
+        state=state,
+        final_text=final_text,
+        note=note,
+    )
+    console.print_json(data=review.model_dump(mode="json"))
+
+
+@app.command("export")
+def export_questionnaire(
+    database: Annotated[Path, typer.Option(exists=True, readable=True)],
+    questionnaire_id: Annotated[str, typer.Argument()],
+    output: Annotated[Path, typer.Option()],
+) -> None:
+    service = build_service(database)
+    result = service.export(questionnaire_id, output)
+    console.print_json(data=result.model_dump(mode="json"))
 
 
 @app.command("impact-scan")
@@ -104,12 +142,15 @@ def verify_audit(
 
 @app.command()
 def serve(
-    database: Annotated[str, typer.Option()] = "trustflow.db",
+    database: Annotated[Path, typer.Option()] = Path("trustflow.db"),
+    upload_dir: Annotated[Path, typer.Option()] = Path(".trustflow/uploads"),
     host: Annotated[str, typer.Option()] = "127.0.0.1",
-    port: Annotated[int, typer.Option()] = 8081,
+    port: Annotated[int, typer.Option(min=1, max=65535)] = 8081,
 ) -> None:
     try:
         import uvicorn
+        from trustflow.web.app import create_app
     except ImportError as exc:
         raise typer.BadParameter("Install with: pip install 'trustflow[web]'") from exc
-    uvicorn.run("trustflow.web.app:create_app", factory=True, host=host, port=port)
+
+    uvicorn.run(create_app(database=database, upload_dir=upload_dir), host=host, port=port)

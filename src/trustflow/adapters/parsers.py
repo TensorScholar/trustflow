@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from uuid import uuid4
 
 from docx import Document
+from docx.table import Table
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
 from trustflow.adapters.safety import inspect_document
 from trustflow.domain.classification import classify_sensitivity
-from trustflow.domain.errors import UnsupportedFormatError
+from trustflow.domain.errors import InvalidQuestionnaireError, UnsupportedFormatError
 from trustflow.domain.models import (
     DocumentFormat,
     PolicySettings,
@@ -30,6 +32,28 @@ def _question(identifier: str, text: str, location: QuestionLocation) -> Questio
         location=location,
         sensitivity=classify_sensitivity(text),
     )
+
+
+def _iter_docx_table_paragraphs(
+    table: Table,
+    path: str,
+    seen_cells: set[int],
+) -> Iterable[tuple[str, int, str]]:
+    for row_index, row in enumerate(table.rows):
+        for cell_index, cell in enumerate(row.cells):
+            marker = id(cell._tc)
+            if marker in seen_cells:
+                continue
+            seen_cells.add(marker)
+            cell_path = f"{path}/row:{row_index}/cell:{cell_index}"
+            for paragraph_index, paragraph in enumerate(cell.paragraphs):
+                yield paragraph.text, paragraph_index, cell_path
+            for nested_index, nested in enumerate(cell.tables):
+                yield from _iter_docx_table_paragraphs(
+                    nested,
+                    f"{cell_path}/table:{nested_index}",
+                    seen_cells,
+                )
 
 
 class ParserRegistry:
@@ -52,36 +76,43 @@ class ParserRegistry:
             questions = self._pdf(path)
         else:
             raise UnsupportedFormatError(fmt.value)
+        if not questions:
+            raise InvalidQuestionnaireError("questionnaire contains no detectable questions")
+        if len(questions) > self.policy.maximum_questions:
+            raise InvalidQuestionnaireError("questionnaire exceeds configured question limit")
         return Questionnaire(
             id=f"qnr_{uuid4().hex}",
             title=path.stem,
-            source_path=str(path),
+            source_path=str(path.resolve()),
             format=fmt,
             questions=tuple(questions),
         )
 
     def _xlsx(self, path: Path) -> list[Question]:
         workbook = load_workbook(path, read_only=True, data_only=False, keep_links=False)
-        questions: list[Question] = []
-        index = 1
-        for sheet in workbook.worksheets:
-            for row in sheet.iter_rows():
-                for cell in row:
-                    value = cell.value
-                    if isinstance(value, str) and value.strip().endswith("?"):
-                        questions.append(
-                            _question(
-                                f"q{index}",
-                                value,
-                                QuestionLocation(
-                                    format=DocumentFormat.XLSX,
-                                    sheet=sheet.title,
-                                    cell=cell.coordinate,
-                                ),
+        try:
+            questions: list[Question] = []
+            index = 1
+            for sheet in workbook.worksheets:
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        value = cell.value
+                        if isinstance(value, str) and value.strip().endswith("?"):
+                            questions.append(
+                                _question(
+                                    f"q{index}",
+                                    value,
+                                    QuestionLocation(
+                                        format=DocumentFormat.XLSX,
+                                        sheet=sheet.title,
+                                        cell=cell.coordinate,
+                                    ),
+                                )
                             )
-                        )
-                        index += 1
-        return questions
+                            index += 1
+            return questions
+        finally:
+            workbook.close()
 
     def _docx(self, path: Path) -> list[Question]:
         document = Document(path)
@@ -96,21 +127,25 @@ class ParserRegistry:
                         QuestionLocation(format=DocumentFormat.DOCX, paragraph=index),
                     )
                 )
+        seen_cells: set[int] = set()
         for table_index, table in enumerate(document.tables):
-            for row_index, row in enumerate(table.rows):
-                for cell_index, cell in enumerate(row.cells):
-                    text = cell.text.strip()
-                    if text.endswith("?"):
-                        questions.append(
-                            _question(
-                                f"q{len(questions)+1}",
-                                text,
-                                QuestionLocation(
-                                    format=DocumentFormat.DOCX,
-                                    key=f"table:{table_index}:{row_index}:{cell_index}",
-                                ),
-                            )
+            for text, paragraph_index, cell_path in _iter_docx_table_paragraphs(
+                table,
+                f"table:{table_index}",
+                seen_cells,
+            ):
+                cleaned = text.strip()
+                if cleaned.endswith("?"):
+                    questions.append(
+                        _question(
+                            f"q{len(questions)+1}",
+                            cleaned,
+                            QuestionLocation(
+                                format=DocumentFormat.DOCX,
+                                key=f"{cell_path}/paragraph:{paragraph_index}",
+                            ),
                         )
+                    )
         return questions
 
     def _csv(self, path: Path) -> list[Question]:
@@ -134,14 +169,18 @@ class ParserRegistry:
 
     def _json(self, path: Path) -> list[Question]:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        rows = payload["questions"] if isinstance(payload, dict) else payload
+        rows = (
+            payload["questions"]
+            if isinstance(payload, dict) and "questions" in payload
+            else payload
+        )
         if not isinstance(rows, list):
-            raise ValueError("JSON questionnaire must contain a list of questions")
+            raise InvalidQuestionnaireError("JSON questionnaire must contain a list of questions")
         questions = []
         for index, row in enumerate(rows):
-            text = row["question"] if isinstance(row, dict) else row
+            text = row.get("question") if isinstance(row, dict) else row
             if not isinstance(text, str):
-                raise ValueError("question must be a string")
+                raise InvalidQuestionnaireError("question must be a string")
             questions.append(
                 _question(
                     f"q{index+1}",
@@ -167,6 +206,8 @@ class ParserRegistry:
 
     def _pdf(self, path: Path) -> list[Question]:
         reader = PdfReader(path)
+        if len(reader.pages) > self.policy.maximum_pdf_pages:
+            raise InvalidQuestionnaireError("PDF exceeds configured page limit")
         questions = []
         for page_number, page in enumerate(reader.pages, start=1):
             text = page.extract_text() or ""
@@ -177,10 +218,7 @@ class ParserRegistry:
                         _question(
                             f"q{len(questions)+1}",
                             cleaned,
-                            QuestionLocation(
-                                format=DocumentFormat.PDF,
-                                row=page_number,
-                            ),
+                            QuestionLocation(format=DocumentFormat.PDF, row=page_number),
                         )
                     )
         return questions

@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from threading import Lock
+
+from trustflow.domain.audit import make_event
 from trustflow.domain.models import (
     AuditEvent,
     DraftAnswer,
@@ -14,6 +19,7 @@ class MemoryStore:
         self.answers: dict[str, DraftAnswer] = {}
         self.reviews: dict[str, ReviewDecision] = {}
         self.audit: list[AuditEvent] = []
+        self._audit_lock = Lock()
 
     def put_source(self, source: SourceDocument) -> None:
         self.sources[source.id] = source
@@ -49,7 +55,27 @@ class MemoryStore:
         return self.reviews.get(answer_id)
 
     def append_audit(self, event: AuditEvent) -> None:
-        self.audit.append(event)
+        with self._audit_lock:
+            self.audit.append(event)
+
+    def append_audit_event(
+        self,
+        event_type: str,
+        entity_id: str,
+        payload: dict[str, object],
+    ) -> AuditEvent:
+        with self._audit_lock:
+            previous = self.audit[-1].event_hash if self.audit else "0" * 64
+            event = make_event(
+                sequence=len(self.audit) + 1,
+                event_type=event_type,
+                entity_id=entity_id,
+                payload=payload,
+                previous_hash=previous,
+            )
+            self.audit.append(event)
+            return event
 
     def list_audit(self) -> list[AuditEvent]:
-        return list(self.audit)
+        with self._audit_lock:
+            return list(self.audit)

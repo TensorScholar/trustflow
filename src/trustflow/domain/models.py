@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Self
 from uuid import uuid4
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 Confidence = Annotated[float, Field(ge=0, le=1)]
+NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 def utc_now() -> datetime:
@@ -58,12 +59,12 @@ class ReviewState(StrEnum):
 
 
 class SourceDocument(StrictModel):
-    id: str
-    title: str
-    owner: str
-    version: str
-    content: str = Field(min_length=1)
-    source_uri: str
+    id: NonEmptyText
+    title: NonEmptyText
+    owner: NonEmptyText
+    version: NonEmptyText
+    content: str = Field(min_length=1, max_length=5_000_000)
+    source_uri: NonEmptyText
     classification: SourceClassification = SourceClassification.INTERNAL
     approved: bool = True
     updated_at: AwareDatetime = Field(default_factory=utc_now)
@@ -81,7 +82,7 @@ class QuestionLocation(StrictModel):
 
 
 class Question(StrictModel):
-    id: str
+    id: NonEmptyText
     text: str = Field(min_length=2, max_length=20_000)
     location: QuestionLocation
     sensitivity: QuestionSensitivity = QuestionSensitivity.STANDARD
@@ -90,19 +91,19 @@ class Question(StrictModel):
 
 class Questionnaire(StrictModel):
     id: str = Field(default_factory=lambda: f"qnr_{uuid4().hex}")
-    title: str
-    source_path: str
+    title: NonEmptyText
+    source_path: NonEmptyText
     format: DocumentFormat
     questions: tuple[Question, ...]
     imported_at: AwareDatetime = Field(default_factory=utc_now)
 
 
 class Evidence(StrictModel):
-    source_id: str
-    source_title: str
-    source_uri: str
-    source_version: str
-    owner: str
+    source_id: NonEmptyText
+    source_title: NonEmptyText
+    source_uri: NonEmptyText
+    source_version: NonEmptyText
+    owner: NonEmptyText
     excerpt: str
     score: Confidence
     updated_at: AwareDatetime
@@ -111,8 +112,8 @@ class Evidence(StrictModel):
 
 class DraftAnswer(StrictModel):
     id: str = Field(default_factory=lambda: f"ans_{uuid4().hex}")
-    questionnaire_id: str
-    question_id: str
+    questionnaire_id: NonEmptyText
+    question_id: NonEmptyText
     text: str
     status: AnswerStatus
     confidence: Confidence
@@ -123,12 +124,18 @@ class DraftAnswer(StrictModel):
 
 class ReviewDecision(StrictModel):
     id: str = Field(default_factory=lambda: f"rev_{uuid4().hex}")
-    answer_id: str
-    reviewer: str
+    answer_id: NonEmptyText
+    reviewer: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=320)]
     state: ReviewState
-    final_text: str
-    note: str = ""
+    final_text: str = Field(default="", max_length=100_000)
+    note: str = Field(default="", max_length=20_000)
     created_at: AwareDatetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def validate_final_text(self) -> Self:
+        if self.state in {ReviewState.APPROVED, ReviewState.EDITED} and not self.final_text.strip():
+            raise ValueError("approved or edited review requires non-blank final_text")
+        return self
 
 
 class ExportResult(StrictModel):
@@ -158,7 +165,11 @@ class PolicySettings(StrictModel):
     require_approved_sources: bool = True
     maximum_file_bytes: int = Field(default=20_000_000, ge=1)
     maximum_archive_members: int = Field(default=5000, ge=1)
+    maximum_member_bytes: int = Field(default=25_000_000, ge=1)
     maximum_uncompressed_bytes: int = Field(default=100_000_000, ge=1)
+    maximum_compression_ratio: float = Field(default=100.0, ge=1.0)
+    maximum_pdf_pages: int = Field(default=500, ge=1)
+    maximum_questions: int = Field(default=10_000, ge=1)
 
 
 class AuditEvent(StrictModel):

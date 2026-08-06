@@ -16,6 +16,7 @@
       "additionalProperties": false,
       "properties": {
         "id": {
+          "minLength": 1,
           "title": "Id",
           "type": "string"
         },
@@ -153,10 +154,12 @@
       "type": "array"
     },
     "source_path": {
+      "minLength": 1,
       "title": "Source Path",
       "type": "string"
     },
     "title": {
+      "minLength": 1,
       "title": "Title",
       "type": "string"
     }

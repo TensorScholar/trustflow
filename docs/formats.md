@@ -3,12 +3,13 @@
 ## XLSX
 
 Questions are cells ending in `?`; answers are written to the next cell. Workbook formulas
-and macros are not executed. `.xlsm` is not accepted.
+and macros are not executed. `.xlsm` is not accepted. Formula-like answer text is prefixed
+with an apostrophe, including when dangerous prefixes follow leading whitespace.
 
 ## DOCX
 
-Questions are paragraphs or table cells ending in `?`. Paragraph answers are inserted below
-the question. Table questions are exported as appended review text in v0.1.
+Questions are paragraphs or table-cell paragraphs ending in `?`. Answers are inserted at the
+recorded paragraph location, including nested tables.
 
 ## CSV
 
@@ -25,4 +26,5 @@ Accepts lines ending in `?`.
 
 ## PDF
 
-Only text-extractable PDFs are parsed. The output is a JSON claim ledger.
+Only text-extractable PDFs are parsed. Page count is bounded. The output is a JSON claim ledger;
+the source PDF is never mutated.

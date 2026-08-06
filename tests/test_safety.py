@@ -47,3 +47,33 @@ def test_invalid_office_zip(tmp_path) -> None:
     path.write_text("not zip", encoding="utf-8")
     with pytest.raises(UnsafeDocumentError, match="valid ZIP"):
         inspect_document(path, PolicySettings())
+
+
+def _minimal_xlsx(archive: zipfile.ZipFile) -> None:
+    archive.writestr("[Content_Types].xml", b"<Types/>")
+    archive.writestr("xl/workbook.xml", b"<workbook/>")
+
+
+def test_office_archive_path_traversal_rejected(tmp_path) -> None:
+    path = tmp_path / "x.xlsx"
+    with zipfile.ZipFile(path, "w") as archive:
+        _minimal_xlsx(archive)
+        archive.writestr("../escape", b"x")
+    with pytest.raises(UnsafeDocumentError, match="unsafe member path"):
+        inspect_document(path, PolicySettings())
+
+
+def test_office_archive_excessive_compression_ratio_rejected(tmp_path) -> None:
+    path = tmp_path / "x.xlsx"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        _minimal_xlsx(archive)
+        archive.writestr("xl/large.bin", b"0" * 100_000)
+    with pytest.raises(UnsafeDocumentError, match="compression ratio"):
+        inspect_document(path, PolicySettings(maximum_compression_ratio=2))
+
+
+def test_empty_document_rejected(tmp_path) -> None:
+    path = tmp_path / "x.csv"
+    path.touch()
+    with pytest.raises(UnsafeDocumentError, match="empty"):
+        inspect_document(path, PolicySettings())

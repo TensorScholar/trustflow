@@ -68,3 +68,22 @@ def test_sqlite_roundtrip(tmp_path) -> None:
     assert store.list_answers("n") == [answer]
     assert store.get_review_for_answer("a") == review
     assert store.list_audit() == [event]
+
+
+def test_concurrent_audit_appends_are_serialized(tmp_path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from trustflow.domain.audit import verify_chain
+
+    path = tmp_path / "concurrent.db"
+    store = SQLiteStore(path)
+
+    def append(index: int) -> None:
+        SQLiteStore(path).append_audit_event("test.concurrent", str(index), {"index": index})
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(append, range(40)))
+
+    events = store.list_audit()
+    assert len(events) == 40
+    verify_chain(events)

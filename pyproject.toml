@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trustflow"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 description = "Evidence-governed RFP and security questionnaire automation."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,7 +17,7 @@ dependencies = [
   "pypdf>=5,<7",
   "python-docx>=1.1,<2",
   "PyYAML>=6,<7",
-  "rich>=13,<15",
+  "rich>=13,<16",
   "typer>=0.16,<1",
 ]
 
@@ -31,6 +31,10 @@ dev = [
   "pytest>=8.3,<10",
   "pytest-cov>=6,<8",
   "ruff>=0.12,<1",
+]
+release = [
+  "build>=1.2,<2",
+  "twine>=6,<7",
 ]
 
 [project.scripts]

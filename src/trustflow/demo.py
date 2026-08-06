@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from trustflow.application.bootstrap import build_service
-from trustflow.domain.models import SourceDocument
+from trustflow.domain.models import AnswerStatus, ReviewState, SourceDocument
 
 
 def run_demo(directory: str | Path | None = None) -> dict[str, object]:
@@ -58,6 +58,20 @@ def run_demo(directory: str | Path | None = None) -> dict[str, object]:
     )
     questionnaire = service.import_questionnaire(questionnaire_path)
     answers = service.draft(questionnaire.id)
+    for answer in answers:
+        if answer.status is AnswerStatus.ANSWERED:
+            continue
+        if answer.status is AnswerStatus.UNANSWERABLE:
+            final_text = "Not applicable to this demonstration."
+        else:
+            final_text = answer.text
+        service.review(
+            answer.id,
+            reviewer="demo-reviewer",
+            state=ReviewState.EDITED,
+            final_text=final_text,
+            note="Deterministic demonstration review.",
+        )
     output = root / "completed.json"
     result = service.export(questionnaire.id, output)
     service.verify_audit()

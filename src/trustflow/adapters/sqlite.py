@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import sqlite3
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeVar
 
 from pydantic import BaseModel
 
+from trustflow.domain.audit import make_event
 from trustflow.domain.models import (
     AuditEvent,
     DraftAnswer,
@@ -19,6 +25,7 @@ class SQLiteStore:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
         with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS objects (
@@ -38,10 +45,19 @@ class SQLiteStore:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.execute("PRAGMA journal_mode=WAL")
-        return connection
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        connection = sqlite3.connect(self.path, timeout=30)
+        try:
+            connection.execute("PRAGMA busy_timeout=30000")
+            connection.execute("PRAGMA synchronous=NORMAL")
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def _put(self, kind: str, identifier: str, model: BaseModel) -> None:
         with self._connect() as connection:
@@ -113,6 +129,38 @@ class SQLiteStore:
                 "INSERT INTO audit_events(sequence,payload) VALUES(?,?)",
                 (event.sequence, event.model_dump_json()),
             )
+
+    def append_audit_event(
+        self,
+        event_type: str,
+        entity_id: str,
+        payload: dict[str, object],
+    ) -> AuditEvent:
+        for attempt in range(5):
+            try:
+                with self._connect() as connection:
+                    connection.execute("BEGIN IMMEDIATE")
+                    row = connection.execute(
+                        "SELECT payload FROM audit_events ORDER BY sequence DESC LIMIT 1"
+                    ).fetchone()
+                    previous_event = AuditEvent.model_validate_json(row[0]) if row else None
+                    event = make_event(
+                        sequence=(previous_event.sequence + 1 if previous_event else 1),
+                        event_type=event_type,
+                        entity_id=entity_id,
+                        payload=payload,
+                        previous_hash=(previous_event.event_hash if previous_event else "0" * 64),
+                    )
+                    connection.execute(
+                        "INSERT INTO audit_events(sequence,payload) VALUES(?,?)",
+                        (event.sequence, event.model_dump_json()),
+                    )
+                    return event
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).casefold() or attempt == 4:
+                    raise
+                time.sleep(0.02 * (2**attempt))
+        raise RuntimeError("unreachable")
 
     def list_audit(self) -> list[AuditEvent]:
         with self._connect() as connection:

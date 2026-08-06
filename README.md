@@ -39,6 +39,12 @@ trustflow demo
 pytest
 ```
 
+## Export safety boundary
+
+Export is fail closed. Drafts marked `review_required`, `conflict`, or `stale` require an
+`approved` or `edited` human review. `unanswerable` drafts require an explicit human edit.
+Rejected reviews and attempts to overwrite the source questionnaire are blocked.
+
 ## Supported formats
 
 - XLSX
@@ -79,4 +85,4 @@ Not included:
 
 ## Status
 
-**Engineering release candidate for demonstration and external review. Not production-ready.**
+**Hardened engineering release candidate for demonstration and external review. Not production-ready.**

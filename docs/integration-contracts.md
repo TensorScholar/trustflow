@@ -10,8 +10,9 @@ Returns stable question IDs and source locations. It must not execute document c
 
 ## Exporter
 
-Writes only final answer text and visible source metadata. It neutralizes spreadsheet
-formula prefixes.
+Writes only final answer text to format-preserving documents. JSON claim-ledger exports also
+include visible source metadata. It neutralizes spreadsheet formula prefixes and rejects
+unresolved or rejected answers even when called outside the application service.
 
 ## Portfolio integrations
 

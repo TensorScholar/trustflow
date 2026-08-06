@@ -22,19 +22,23 @@
       "default": "internal"
     },
     "content": {
+      "maxLength": 5000000,
       "minLength": 1,
       "title": "Content",
       "type": "string"
     },
     "id": {
+      "minLength": 1,
       "title": "Id",
       "type": "string"
     },
     "owner": {
+      "minLength": 1,
       "title": "Owner",
       "type": "string"
     },
     "source_uri": {
+      "minLength": 1,
       "title": "Source Uri",
       "type": "string"
     },
@@ -48,6 +52,7 @@
       "uniqueItems": true
     },
     "title": {
+      "minLength": 1,
       "title": "Title",
       "type": "string"
     },
@@ -70,6 +75,7 @@
       "title": "Valid Until"
     },
     "version": {
+      "minLength": 1,
       "title": "Version",
       "type": "string"
     }

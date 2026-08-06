@@ -25,6 +25,11 @@ jobs:
       - run: ruff format --check .
       - run: ruff check .
       - run: mypy src/trustflow
+      - run: python scripts/check_architecture.py
+      - run: python scripts/security_scan.py
+      - run: python scripts/secret_scan.py
+      - run: python scripts/generate_schemas.py
+      - run: git diff --exit-code -- schemas
       - run: pytest --cov=trustflow --cov-branch --cov-report=xml
       - run: trustflow demo
       - run: python -m pip_audit

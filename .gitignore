@@ -16,3 +16,4 @@ dist/
 .demo/
 .env
 .DS_Store
+.trustflow/

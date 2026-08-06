@@ -49,3 +49,14 @@ def test_docx_parser(tmp_path) -> None:
     document.save(path)
     questionnaire = ParserRegistry().parse(path)
     assert len(questionnaire.questions) == 2
+
+
+def test_empty_questionnaire_rejected(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import InvalidQuestionnaireError
+
+    path = tmp_path / "empty.json"
+    path.write_text('{"questions": []}', encoding="utf-8")
+    with pytest.raises(InvalidQuestionnaireError, match="no detectable"):
+        ParserRegistry().parse(path)

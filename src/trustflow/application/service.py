@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from trustflow.domain.audit import make_event, verify_chain
+from trustflow.domain.audit import verify_chain
 from trustflow.domain.errors import InvalidTransitionError, NotFoundError
 from trustflow.domain.models import (
     AnswerStatus,
     DraftAnswer,
     EvaluationCase,
     EvaluationSummary,
+    ExportResult,
     ImpactFinding,
     PolicySettings,
     Questionnaire,
@@ -24,6 +25,12 @@ from trustflow.ports.interfaces import (
     QuestionnaireParser,
     Store,
 )
+
+_RESOLVABLE_WITH_REVIEW = {
+    AnswerStatus.REVIEW_REQUIRED,
+    AnswerStatus.CONFLICT,
+    AnswerStatus.STALE,
+}
 
 
 class TrustFlowService:
@@ -43,17 +50,7 @@ class TrustFlowService:
         self.policy = policy or PolicySettings()
 
     def _audit(self, event_type: str, entity_id: str, payload: dict[str, object]) -> None:
-        events = self.store.list_audit()
-        previous = events[-1].event_hash if events else "0" * 64
-        self.store.append_audit(
-            make_event(
-                sequence=len(events) + 1,
-                event_type=event_type,
-                entity_id=entity_id,
-                payload=payload,
-                previous_hash=previous,
-            )
-        )
+        self.store.append_audit_event(event_type, entity_id, payload)
 
     def ingest_source(self, source: SourceDocument) -> None:
         self.store.put_source(source)
@@ -77,6 +74,8 @@ class TrustFlowService:
         questionnaire = self.store.get_questionnaire(questionnaire_id)
         if questionnaire is None:
             raise NotFoundError(f"questionnaire not found: {questionnaire_id}")
+        if self.store.list_answers(questionnaire_id):
+            raise InvalidTransitionError("questionnaire has already been drafted")
         answers: list[DraftAnswer] = []
         for question in questionnaire.questions:
             evidence = retrieve(question.text, self.store.list_sources(), self.policy)
@@ -118,48 +117,91 @@ class TrustFlowService:
         *,
         reviewer: str,
         state: ReviewState,
-        final_text: str,
+        final_text: str = "",
         note: str = "",
     ) -> ReviewDecision:
         answer = self.store.get_answer(answer_id)
         if answer is None:
             raise NotFoundError(f"answer not found: {answer_id}")
+        if not reviewer.strip():
+            raise InvalidTransitionError("reviewer cannot be blank")
         if state is ReviewState.APPROVED and answer.status is AnswerStatus.UNANSWERABLE:
-            raise InvalidTransitionError("unanswerable answer requires edited text")
-        if not final_text.strip():
-            raise InvalidTransitionError("final answer cannot be blank")
+            raise InvalidTransitionError("unanswerable answer requires an explicit human edit")
+        if state in {ReviewState.APPROVED, ReviewState.EDITED} and not final_text.strip():
+            raise InvalidTransitionError("approved or edited review requires non-blank final text")
         review = ReviewDecision(
             answer_id=answer.id,
             reviewer=reviewer,
             state=state,
-            final_text=final_text,
+            final_text="" if state is ReviewState.REJECTED else final_text,
             note=note,
         )
         self.store.put_review(review)
         self._audit(
             "answer.reviewed",
             review.id,
-            {"answer_id": answer.id, "state": state.value, "reviewer": reviewer},
+            {"answer_id": answer.id, "state": state.value, "reviewer": review.reviewer},
         )
         return review
 
-    def export(self, questionnaire_id: str, output: str | Path):
+    def _validated_answers(self, questionnaire: Questionnaire) -> list[DraftAnswer]:
+        answers = self.store.list_answers(questionnaire.id)
+        expected = {question.id for question in questionnaire.questions}
+        actual: dict[str, DraftAnswer] = {}
+        for answer in answers:
+            if answer.question_id in actual:
+                raise InvalidTransitionError(f"duplicate drafts for question: {answer.question_id}")
+            actual[answer.question_id] = answer
+        if set(actual) != expected:
+            raise InvalidTransitionError("every question must have exactly one draft before export")
+        return [actual[question.id] for question in questionnaire.questions]
+
+    def _validated_reviews(
+        self,
+        answers: list[DraftAnswer],
+    ) -> dict[str, ReviewDecision]:
+        reviews: dict[str, ReviewDecision] = {}
+        blocked: list[str] = []
+        for answer in answers:
+            review = self.store.get_review_for_answer(answer.id)
+            if review is not None:
+                reviews[answer.id] = review
+            if review is not None and review.state is ReviewState.REJECTED:
+                blocked.append(f"{answer.question_id}:rejected")
+                continue
+            if answer.status is AnswerStatus.ANSWERED:
+                continue
+            if review is None:
+                blocked.append(f"{answer.question_id}:missing_review")
+                continue
+            if (
+                answer.status is AnswerStatus.UNANSWERABLE
+                and review.state is not ReviewState.EDITED
+            ):
+                blocked.append(f"{answer.question_id}:human_edit_required")
+                continue
+            if answer.status in _RESOLVABLE_WITH_REVIEW and review.state not in {
+                ReviewState.APPROVED,
+                ReviewState.EDITED,
+            }:
+                blocked.append(f"{answer.question_id}:unresolved")
+        if blocked:
+            raise InvalidTransitionError(
+                "export blocked by unresolved answers: " + ", ".join(blocked)
+            )
+        return reviews
+
+    def export(self, questionnaire_id: str, output: str | Path) -> ExportResult:
         questionnaire = self.store.get_questionnaire(questionnaire_id)
         if questionnaire is None:
             raise NotFoundError(f"questionnaire not found: {questionnaire_id}")
-        answers = self.store.list_answers(questionnaire_id)
-        if len(answers) != len(questionnaire.questions):
-            raise InvalidTransitionError("all questions must be drafted before export")
-        reviews = {
-            answer.id: review
-            for answer in answers
-            if (review := self.store.get_review_for_answer(answer.id)) is not None
-        }
+        answers = self._validated_answers(questionnaire)
+        reviews = self._validated_reviews(answers)
         result = self.exporter.export(questionnaire, answers, reviews, Path(output))
         self._audit(
             "questionnaire.exported",
             questionnaire.id,
-            {"output": str(output), "answered": result.answered},
+            {"output": str(result.output_path), "answered": result.answered},
         )
         return result
 
@@ -194,6 +236,8 @@ class TrustFlowService:
         return findings
 
     def metrics(self, questionnaire_id: str) -> dict[str, float | int]:
+        if self.store.get_questionnaire(questionnaire_id) is None:
+            raise NotFoundError(f"questionnaire not found: {questionnaire_id}")
         answers = self.store.list_answers(questionnaire_id)
         total = len(answers)
         return {
@@ -205,8 +249,7 @@ class TrustFlowService:
             ),
             "review_rate": (
                 sum(
-                    item.status
-                    in {AnswerStatus.REVIEW_REQUIRED, AnswerStatus.CONFLICT}
+                    item.status in {AnswerStatus.REVIEW_REQUIRED, AnswerStatus.CONFLICT}
                     for item in answers
                 )
                 / total

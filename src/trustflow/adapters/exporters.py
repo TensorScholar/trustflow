@@ -4,14 +4,24 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import shutil
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from docx import Document
+from docx.document import Document as DocumentObject
+from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
 
 from trustflow.adapters.safety import neutralize_spreadsheet_formula
-from trustflow.domain.errors import UnsupportedFormatError
+from trustflow.domain.errors import (
+    InvalidTransitionError,
+    UnsupportedFormatError,
+    UnsafeExportError,
+)
 from trustflow.domain.models import (
     AnswerStatus,
     DocumentFormat,
@@ -19,11 +29,110 @@ from trustflow.domain.models import (
     ExportResult,
     Questionnaire,
     ReviewDecision,
+    ReviewState,
 )
 
 
 def _final_text(answer: DraftAnswer, review: ReviewDecision | None) -> str:
-    return review.final_text if review is not None else answer.text
+    if review is None:
+        if answer.status is not AnswerStatus.ANSWERED:
+            raise InvalidTransitionError("unresolved answer cannot be exported")
+        return answer.text
+    if review.state not in {ReviewState.APPROVED, ReviewState.EDITED}:
+        raise InvalidTransitionError("rejected review cannot be exported")
+    if answer.status is AnswerStatus.UNANSWERABLE and review.state is not ReviewState.EDITED:
+        raise InvalidTransitionError("unanswerable answer requires an explicit human edit")
+    return review.final_text
+
+
+def _answer_mapping(
+    questionnaire: Questionnaire,
+    answers: list[DraftAnswer],
+) -> dict[str, DraftAnswer]:
+    mapping: dict[str, DraftAnswer] = {}
+    for answer in answers:
+        if answer.questionnaire_id != questionnaire.id:
+            raise InvalidTransitionError("answer belongs to a different questionnaire")
+        if answer.question_id in mapping:
+            raise InvalidTransitionError(f"duplicate answer for question: {answer.question_id}")
+        mapping[answer.question_id] = answer
+    expected = {question.id for question in questionnaire.questions}
+    actual = set(mapping)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        raise InvalidTransitionError(f"answer set mismatch; missing={missing}, extra={extra}")
+    return mapping
+
+
+def _source_and_destination(questionnaire: Questionnaire, output: Path) -> tuple[Path, Path]:
+    try:
+        source = Path(questionnaire.source_path).resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise UnsafeExportError("questionnaire source file no longer exists") from exc
+    destination = output.expanduser().resolve(strict=False)
+    if source == destination:
+        raise UnsafeExportError("export destination must differ from the source document")
+    if destination.exists() and destination.is_dir():
+        raise UnsafeExportError("export destination is a directory")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    return source, destination
+
+
+@contextmanager
+def _atomic_destination(destination: Path) -> Iterator[Path]:
+    descriptor, raw_path = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix=f".{destination.name}.",
+        suffix=f".tmp{destination.suffix}",
+    )
+    os.close(descriptor)
+    temporary = Path(raw_path)
+    try:
+        yield temporary
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _docx_paragraph(document: DocumentObject, key: str) -> Paragraph:
+    table = None
+    cell = None
+    row_index: int | None = None
+    for segment in key.split("/"):
+        kind, separator, raw_index = segment.partition(":")
+        if not separator or not raw_index.isdigit():
+            raise UnsafeExportError(f"invalid DOCX location: {key}")
+        index = int(raw_index)
+        if kind == "table":
+            tables = document.tables if cell is None else cell.tables
+            try:
+                table = tables[index]
+            except IndexError as exc:
+                raise UnsafeExportError(f"DOCX table location no longer exists: {key}") from exc
+            cell = None
+            row_index = None
+        elif kind == "row":
+            if table is None:
+                raise UnsafeExportError(f"invalid DOCX row location: {key}")
+            row_index = index
+        elif kind == "cell":
+            if table is None or row_index is None:
+                raise UnsafeExportError(f"invalid DOCX cell location: {key}")
+            try:
+                cell = table.rows[row_index].cells[index]
+            except IndexError as exc:
+                raise UnsafeExportError(f"DOCX cell location no longer exists: {key}") from exc
+        elif kind == "paragraph":
+            if cell is None:
+                raise UnsafeExportError(f"invalid DOCX paragraph location: {key}")
+            try:
+                return cell.paragraphs[index]
+            except IndexError as exc:
+                raise UnsafeExportError(f"DOCX paragraph location no longer exists: {key}") from exc
+        else:
+            raise UnsafeExportError(f"unknown DOCX location segment: {kind}")
+    raise UnsafeExportError(f"DOCX location does not identify a paragraph: {key}")
 
 
 class ExporterRegistry:
@@ -34,24 +143,25 @@ class ExporterRegistry:
         reviews: dict[str, ReviewDecision],
         output: Path,
     ) -> ExportResult:
-        mapping = {item.question_id: item for item in answers}
+        mapping = _answer_mapping(questionnaire, answers)
+        source, destination = _source_and_destination(questionnaire, output)
         if questionnaire.format is DocumentFormat.XLSX:
-            self._xlsx(questionnaire, mapping, reviews, output)
+            self._xlsx(questionnaire, mapping, reviews, source, destination)
         elif questionnaire.format is DocumentFormat.DOCX:
-            self._docx(questionnaire, mapping, reviews, output)
+            self._docx(questionnaire, mapping, reviews, source, destination)
         elif questionnaire.format is DocumentFormat.CSV:
-            self._csv(questionnaire, mapping, reviews, output)
+            self._csv(questionnaire, mapping, reviews, source, destination)
         elif questionnaire.format in {
             DocumentFormat.JSON,
             DocumentFormat.MARKDOWN,
             DocumentFormat.PDF,
         }:
-            self._json(questionnaire, mapping, reviews, output)
+            self._json(questionnaire, mapping, reviews, destination)
         else:
             raise UnsupportedFormatError(questionnaire.format.value)
         return ExportResult(
             questionnaire_id=questionnaire.id,
-            output_path=str(output),
+            output_path=str(destination),
             format=questionnaire.format,
             answered=sum(item.status is AnswerStatus.ANSWERED for item in answers),
             review_required=sum(
@@ -68,75 +178,93 @@ class ExporterRegistry:
         questionnaire: Questionnaire,
         answers: dict[str, DraftAnswer],
         reviews: dict[str, ReviewDecision],
-        output: Path,
+        source: Path,
+        destination: Path,
     ) -> None:
-        shutil.copyfile(questionnaire.source_path, output)
-        workbook = load_workbook(output)
-        for question in questionnaire.questions:
-            answer = answers[question.id]
-            sheet = workbook[question.location.sheet or workbook.active.title]
-            cell = sheet[question.location.cell or "A1"]
-            target = sheet.cell(row=cell.row, column=cell.column + 1)
-            target.value = neutralize_spreadsheet_formula(
-                _final_text(answer, reviews.get(answer.id))
-            )
-        workbook.save(output)
+        with _atomic_destination(destination) as temporary:
+            shutil.copyfile(source, temporary)
+            workbook = load_workbook(temporary, keep_links=False)
+            try:
+                for question in questionnaire.questions:
+                    answer = answers[question.id]
+                    sheet = workbook[question.location.sheet or workbook.active.title]
+                    cell = sheet[question.location.cell or "A1"]
+                    target = sheet.cell(row=cell.row, column=cell.column + 1)
+                    target.value = neutralize_spreadsheet_formula(
+                        _final_text(answer, reviews.get(answer.id))
+                    )
+                workbook.save(temporary)
+            finally:
+                workbook.close()
 
     def _docx(
         self,
         questionnaire: Questionnaire,
         answers: dict[str, DraftAnswer],
         reviews: dict[str, ReviewDecision],
-        output: Path,
+        source: Path,
+        destination: Path,
     ) -> None:
-        document = Document(questionnaire.source_path)
+        document = Document(source)
         for question in questionnaire.questions:
             answer = answers[question.id]
             text = _final_text(answer, reviews.get(answer.id))
             if question.location.paragraph is not None:
-                paragraph = document.paragraphs[question.location.paragraph]
-                paragraph.add_run(f"\nAnswer: {text}")
+                try:
+                    paragraph = document.paragraphs[question.location.paragraph]
+                except IndexError as exc:
+                    raise UnsafeExportError("DOCX paragraph location no longer exists") from exc
+            elif question.location.key:
+                paragraph = _docx_paragraph(document, question.location.key)
             else:
-                document.add_paragraph(f"{question.text}\nAnswer: {text}")
-        document.save(output)
+                raise UnsafeExportError("DOCX question has no writable location")
+            paragraph.add_run(f"\nAnswer: {text}")
+        with _atomic_destination(destination) as temporary:
+            document.save(temporary)
 
     def _csv(
         self,
         questionnaire: Questionnaire,
         answers: dict[str, DraftAnswer],
         reviews: dict[str, ReviewDecision],
-        output: Path,
+        source: Path,
+        destination: Path,
     ) -> None:
-        with Path(questionnaire.source_path).open(newline="", encoding="utf-8-sig") as handle:
+        with source.open(newline="", encoding="utf-8-sig") as handle:
             rows = list(csv.reader(handle))
         for question in questionnaire.questions:
             answer = answers[question.id]
             row = (question.location.row or 1) - 1
             column = int(question.location.key or "0") + 1
+            if row < 0 or row >= len(rows):
+                raise UnsafeExportError("CSV question row no longer exists")
             while len(rows[row]) <= column:
                 rows[row].append("")
             rows[row][column] = neutralize_spreadsheet_formula(
                 _final_text(answer, reviews.get(answer.id))
             )
-        with output.open("w", newline="", encoding="utf-8") as handle:
-            csv.writer(handle).writerows(rows)
+        with _atomic_destination(destination) as temporary:
+            with temporary.open("w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle).writerows(rows)
 
     def _json(
         self,
         questionnaire: Questionnaire,
         answers: dict[str, DraftAnswer],
         reviews: dict[str, ReviewDecision],
-        output: Path,
+        destination: Path,
     ) -> None:
         payload = []
         for question in questionnaire.questions:
             answer = answers[question.id]
+            review = reviews.get(answer.id)
             payload.append(
                 {
                     "question_id": question.id,
                     "question": question.text,
-                    "answer": _final_text(answer, reviews.get(answer.id)),
-                    "status": answer.status.value,
+                    "answer": _final_text(answer, review),
+                    "draft_status": answer.status.value,
+                    "review_state": review.state.value if review is not None else None,
                     "sources": [
                         {
                             "id": item.source_id,
@@ -147,4 +275,8 @@ class ExporterRegistry:
                     ],
                 }
             )
-        output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        with _atomic_destination(destination) as temporary:
+            temporary.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
