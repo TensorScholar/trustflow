@@ -16,6 +16,7 @@ from docx import Document
 from docx.document import Document as DocumentObject
 from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 
 from trustflow.adapters.safety import neutralize_spreadsheet_formula
 from trustflow.domain.errors import (
@@ -189,12 +190,9 @@ class ExporterRegistry:
                 for question in questionnaire.questions:
                     answer = answers[question.id]
                     sheet_name = question.location.sheet
-                    if sheet_name is None:
-                        active_sheet = workbook.active
-                        if active_sheet is None:
-                            raise UnsafeExportError("XLSX workbook has no active worksheet")
-                        sheet_name = active_sheet.title
-                    sheet = workbook[sheet_name]
+                    sheet = workbook.active if sheet_name is None else workbook[sheet_name]
+                    if not isinstance(sheet, Worksheet):
+                        raise UnsafeExportError("XLSX target is not a worksheet")
                     cell = sheet[question.location.cell or "A1"]
                     target = sheet.cell(row=cell.row, column=cell.column + 1)
                     target.value = neutralize_spreadsheet_formula(
