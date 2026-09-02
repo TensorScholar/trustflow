@@ -11,13 +11,13 @@ from typing import TypeVar
 from urllib.parse import quote
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from trustflow.domain.errors import TrustFlowError
 from trustflow.domain.models import SourceClassification, SourceDocument
 
 _REPOSITORY_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
-_COMMIT_SHA = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+_GIT_SHA = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
 _DEFAULT_MAXIMUM_FILE_BYTES = 1_000_000
 _MAXIMUM_PATH_LENGTH = 4096
 
@@ -41,13 +41,18 @@ class _Commit(_ApiModel):
 
 
 class _CommitResponse(_ApiModel):
-    sha: str = Field(pattern=_COMMIT_SHA)
+    sha: str = Field(pattern=_GIT_SHA)
     commit: _Commit
+
+
+class _CommitList(RootModel[list[_CommitResponse]]):
+    pass
 
 
 class _ContentResponse(_ApiModel):
     type: str
     size: int = Field(ge=0)
+    sha: str = Field(pattern=_GIT_SHA)
     encoding: str | None = None
     content: str | None = None
 
@@ -88,7 +93,7 @@ def _safe_ref(ref: str) -> str:
 
 
 class GitHubEvidenceSource:
-    """Fetch one explicit UTF-8 file from GitHub and pin it to an immutable commit."""
+    """Fetch one explicit UTF-8 file from GitHub and bind it to file-level history."""
 
     def __init__(
         self,
@@ -167,15 +172,16 @@ class GitHubEvidenceSource:
         encoded_repository = quote(repository_name, safe="")
         encoded_ref = quote(safe_ref, safe="")
         encoded_path = quote(safe_path, safe="/")
+        repository_endpoint = f"/repos/{encoded_owner}/{encoded_repository}"
 
-        commit = self._get_model(
-            f"/repos/{encoded_owner}/{encoded_repository}/commits/{encoded_ref}",
+        resolved_commit = self._get_model(
+            f"{repository_endpoint}/commits/{encoded_ref}",
             _CommitResponse,
         )
         item = self._get_model(
-            f"/repos/{encoded_owner}/{encoded_repository}/contents/{encoded_path}",
+            f"{repository_endpoint}/contents/{encoded_path}",
             _ContentResponse,
-            params={"ref": commit.sha},
+            params={"ref": resolved_commit.sha},
         )
         if item.type != "file":
             raise GitHubSourceError("GitHub source must resolve to a regular file")
@@ -200,21 +206,30 @@ class GitHubEvidenceSource:
         if "\x00" in content:
             raise GitHubSourceError("GitHub source appears to be binary content")
 
+        file_history = self._get_model(
+            f"{repository_endpoint}/commits",
+            _CommitList,
+            params={"sha": resolved_commit.sha, "path": safe_path, "per_page": "1"},
+        )
+        if not file_history.root:
+            raise GitHubSourceError("GitHub returned no commit history for the requested file")
+        file_commit = file_history.root[0]
+
         source_uri = (
             f"https://github.com/{encoded_owner}/{encoded_repository}/blob/"
-            f"{commit.sha}/{encoded_path}"
+            f"{file_commit.sha}/{encoded_path}"
         )
         try:
             return SourceDocument(
                 id=identifier,
                 title=title,
                 owner=evidence_owner,
-                version=commit.sha,
+                version=file_commit.sha,
                 content=content,
                 source_uri=source_uri,
                 classification=classification,
                 approved=approved,
-                updated_at=commit.commit.committer.date.astimezone(UTC),
+                updated_at=file_commit.commit.committer.date.astimezone(UTC),
             )
         except ValidationError as exc:
             raise GitHubSourceError("GitHub source metadata is invalid") from exc
