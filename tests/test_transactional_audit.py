@@ -9,7 +9,7 @@ from trustflow.adapters.parsers import ParserRegistry
 from trustflow.adapters.sqlite import SQLiteStore
 from trustflow.application.service import TrustFlowService
 from trustflow.domain.audit import verify_chain
-from trustflow.domain.models import ReviewState, SourceDocument
+from trustflow.domain.models import AuditEvent, ReviewState, SourceDocument
 
 
 class FailingAuditMemoryStore(MemoryStore):
@@ -25,7 +25,7 @@ class FailingAuditMemoryStore(MemoryStore):
         event_type: str,
         entity_id: str,
         payload: dict[str, object],
-    ):
+    ) -> AuditEvent:
         if self._audits_until_failure is not None:
             if self._audits_until_failure == 0:
                 self._audits_until_failure = None
@@ -128,7 +128,6 @@ def test_review_rolls_back_when_audit_append_fails(tmp_path) -> None:
             final_text=answer.text,
         )
 
-    assert store.review_history if False else True
     assert store.get_review_for_answer(answer.id) is None
     assert store.list_reviews_for_answer(answer.id) == []
     assert store.list_audit() == audit_before
@@ -154,16 +153,17 @@ def test_sqlite_transaction_rolls_back_state_and_audit_together(tmp_path) -> Non
 
 def test_sqlite_transaction_commits_state_and_valid_audit_together(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "commit.db")
+    source = _source()
 
     with store.transaction() as transaction:
-        transaction.put_source(_source())
+        transaction.put_source(source)
         transaction.append_audit_event(
             "source.ingested",
             "security",
             {"version": "1"},
         )
 
-    assert store.get_source("security") == _source()
+    assert store.get_source("security") == source
     events = store.list_audit()
     assert len(events) == 1
     verify_chain(events)
