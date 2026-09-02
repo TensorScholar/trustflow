@@ -226,10 +226,10 @@ class EvaluationSummary(StrictModel):
     cases: int
     status_accuracy: float
     citation_recall: float
-    citation_precision: float
-    false_acceptance_rate: float
-    auto_answer_precision: float
-    forbidden_citation_rate: float
+    citation_precision: float = 0.0
+    false_acceptance_rate: float = 0.0
+    auto_answer_precision: float = 0.0
+    forbidden_citation_rate: float = 0.0
     unsupported_answer_rate: float
     sensitive_auto_approval_rate: float
     failed_case_ids: tuple[str, ...] = ()
