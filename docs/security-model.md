@@ -8,7 +8,8 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - internal policies and approved answer libraries;
 - externally shared claims;
 - reviewer labels and decisions;
-- source-version, provenance and audit evidence.
+- source-version, provenance and audit evidence;
+- external-source credentials used by optional adapters.
 
 ## Primary threats
 
@@ -19,9 +20,10 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 5. accidental source-file mutation or partial output;
 6. arbitrary server-local file access through the web adapter;
 7. concurrent audit writers corrupting sequence or chain integrity;
-8. future cross-tenant retrieval or over-privileged enterprise connectors;
+8. external connector credential leakage, redirect exfiltration or over-privileged access;
 9. source content or provenance metadata changing while dependent answer snapshots remain trusted;
-10. stale review replay after the reviewed draft or evidence snapshot changes.
+10. stale review replay after the reviewed draft or evidence snapshot changes;
+11. future cross-tenant retrieval mixing tenant data.
 
 ## Current controls
 
@@ -39,7 +41,10 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - same-source-path rejection and atomic create-if-absent destination commit;
 - controlled multipart upload storage for the optional API;
 - transactional SQLite audit sequencing with a hash-linked event chain;
-- deterministic source-content/provenance impact scans with latest review context.
+- deterministic source-content/provenance impact scans with latest review context;
+- GitHub evidence reads restricted to an explicit repository/file, fixed API origin, GET-only client,
+  no redirect following, environment-only token input, immutable commit pinning and explicit source
+  approval.
 
 ## Risk register
 
@@ -57,11 +62,12 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 | API file disclosure | Remote caller reads server-local paths | Multipart upload only; generated storage names; response redaction |
 | Audit race/tampering | Sequence or history becomes inconsistent | Transactional append, hash chain, concurrency/tamper tests |
 | Prompt injection in evidence | Source text attempts to alter system policy | Treat source text strictly as evidence, never executable instruction |
+| GitHub credential leakage | Token appears in CLI history, stored source, error body or redirect target | Environment-only token, token-free source/audit metadata, sanitized errors, redirects disabled |
+| GitHub overreach | Connector browses or mutates more repository data than intended | Exact repository/file locator, two GET operations, immutable commit pin, operator-provided read-only repository credential |
 | Cross-tenant leakage | Future hosted search mixes tenants | Tenant isolation must exist before multi-tenant hosting |
-| Connector privilege | External connector reads or writes too broadly | Scoped authorization and connector-specific threat review before release |
 
 ## Residual risk
 
-TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or enterprise connector credential system. Reviewer values are caller-supplied labels rather than authenticated identities. The optional API does not provide the production controls listed in `SECURITY.md`.
+TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or connector credential-management system. The GitHub adapter cannot prove that the supplied credential is least-privileged, correctly governed by organization SSO, or rotated appropriately; those remain deployment responsibilities. Reviewer values are caller-supplied labels rather than authenticated identities. The optional API does not provide the production controls listed in `SECURITY.md`.
 
 These are explicit release boundaries, not implied future guarantees. See [limitations](limitations.md).
