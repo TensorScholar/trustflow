@@ -4,7 +4,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from trustflow.domain.errors import InvalidTransitionError, NotFoundError
-from trustflow.domain.models import AnswerStatus, ReviewState, SourceDocument
+from trustflow.domain.models import (
+    AnswerStatus,
+    ReviewDecision,
+    ReviewState,
+    SourceDocument,
+)
+from trustflow.domain.review import answer_state_digest
 
 
 def questionnaire_file(tmp_path):
@@ -74,6 +80,83 @@ def test_review(service, tmp_path) -> None:
         final_text="Yes. Customer data is encrypted at rest with AES-256.",
     )
     assert review.final_text.startswith("Yes")
+    assert review.answer_digest == answer_state_digest(answer)
+
+
+def test_approved_review_must_preserve_exact_draft(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(single_security_questionnaire(tmp_path))
+    answer = service.draft(questionnaire.id)[0]
+    with pytest.raises(InvalidTransitionError, match="preserve the exact draft"):
+        service.review(
+            answer.id,
+            reviewer="security",
+            state=ReviewState.APPROVED,
+            final_text=answer.text + " Expanded.",
+        )
+
+
+def test_edited_review_must_actually_change_text(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(single_security_questionnaire(tmp_path))
+    answer = service.draft(questionnaire.id)[0]
+    with pytest.raises(InvalidTransitionError, match="changed final text"):
+        service.review(
+            answer.id,
+            reviewer="security",
+            state=ReviewState.EDITED,
+            final_text=answer.text,
+        )
+
+
+def test_review_replay_is_blocked_after_answer_state_changes(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(single_security_questionnaire(tmp_path))
+    answer = service.draft(questionnaire.id)[0]
+    service.review(
+        answer.id,
+        reviewer="security",
+        state=ReviewState.APPROVED,
+        final_text=answer.text,
+    )
+    service.store.put_answer(answer.model_copy(update={"reasons": answer.reasons + ("mutated",)}))
+
+    with pytest.raises(InvalidTransitionError, match="review_state_changed"):
+        service.export(questionnaire.id, tmp_path / "blocked.json")
+
+
+def test_legacy_unbound_review_is_not_trusted(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(single_security_questionnaire(tmp_path))
+    answer = service.draft(questionnaire.id)[0]
+    service.store.put_review(
+        ReviewDecision(
+            answer_id=answer.id,
+            reviewer="legacy-label",
+            state=ReviewState.APPROVED,
+            final_text=answer.text,
+        )
+    )
+
+    with pytest.raises(InvalidTransitionError, match="review_unbound"):
+        service.export(questionnaire.id, tmp_path / "blocked.json")
+
+
+def test_review_history_is_append_only_and_latest_decision_governs(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(single_security_questionnaire(tmp_path))
+    answer = service.draft(questionnaire.id)[0]
+    rejected = service.review(
+        answer.id,
+        reviewer="security-a",
+        state=ReviewState.REJECTED,
+        note="Needs another pass.",
+    )
+    approved = service.review(
+        answer.id,
+        reviewer="security-b",
+        state=ReviewState.APPROVED,
+        final_text=answer.text,
+    )
+
+    assert service.review_history(answer.id) == [rejected, approved]
+    result = service.export(questionnaire.id, tmp_path / "approved.json")
+    assert result.questionnaire_id == questionnaire.id
 
 
 def test_unanswerable_cannot_be_promoted_to_external_claim(service, tmp_path) -> None:
@@ -93,6 +176,11 @@ def test_unanswerable_cannot_be_promoted_to_external_claim(service, tmp_path) ->
 def test_missing_questionnaire(service) -> None:
     with pytest.raises(NotFoundError):
         service.draft("missing")
+
+
+def test_missing_answer_review_history(service) -> None:
+    with pytest.raises(NotFoundError, match="answer not found"):
+        service.review_history("missing")
 
 
 def test_export_before_draft_fails(service, tmp_path) -> None:
