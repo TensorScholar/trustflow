@@ -3,7 +3,11 @@
 - no OCR;
 - no macro-enabled documents;
 - no browser extension;
-- no live enterprise connectors;
+- external evidence integration is limited to one explicit GitHub exact-file reader; there is no
+  repository search, broad synchronization, Google Drive, Confluence, Notion, or generic connector
+  framework;
+- GitHub connector CI uses deterministic mocked API transport and does not prove live organization
+  credentials, SSO policy, repository permission scope, or deployment-network reachability;
 - lexical retrieval is inspectable but not semantic;
 - conflict detection is conservative and lexical;
 - reviewer values are caller-supplied labels, not authenticated or cryptographically verified
