@@ -57,28 +57,31 @@ class TrustFlowService:
 
     def ingest_source(self, source: SourceDocument) -> None:
         previous = self.store.get_source(source.id)
-        self.store.put_source(source)
-        impact_count = len(self.impact_scan(source.id)) if previous is not None else 0
-        self._audit(
-            "source.ingested",
-            source.id,
-            {
-                "version": source.version,
-                "approved": source.approved,
-                "owner": source.owner,
-                "replaced": previous is not None,
-                "impact_count": impact_count,
-            },
-        )
+        impact_count = 0
+        if previous is not None:
+            proposed_sources = {item.id: item for item in self.store.list_sources()}
+            proposed_sources[source.id] = source
+            impact_count = len(self._impact_findings(proposed_sources, source.id))
+        payload: dict[str, object] = {
+            "version": source.version,
+            "approved": source.approved,
+            "owner": source.owner,
+            "replaced": previous is not None,
+            "impact_count": impact_count,
+        }
+        with self.store.transaction() as transaction:
+            transaction.put_source(source)
+            transaction.append_audit_event("source.ingested", source.id, payload)
 
     def import_questionnaire(self, path: str | Path) -> Questionnaire:
         questionnaire = self.parser.parse(Path(path))
-        self.store.put_questionnaire(questionnaire)
-        self._audit(
-            "questionnaire.imported",
-            questionnaire.id,
-            {"format": questionnaire.format.value, "questions": len(questionnaire.questions)},
-        )
+        with self.store.transaction() as transaction:
+            transaction.put_questionnaire(questionnaire)
+            transaction.append_audit_event(
+                "questionnaire.imported",
+                questionnaire.id,
+                {"format": questionnaire.format.value, "questions": len(questionnaire.questions)},
+            )
         return questionnaire
 
     def draft(self, questionnaire_id: str) -> list[DraftAnswer]:
@@ -87,9 +90,10 @@ class TrustFlowService:
             raise NotFoundError(f"questionnaire not found: {questionnaire_id}")
         if self.store.list_answers(questionnaire_id):
             raise InvalidTransitionError("questionnaire has already been drafted")
+        sources = self.store.list_sources()
         answers: list[DraftAnswer] = []
         for question in questionnaire.questions:
-            evidence = retrieve(question.text, self.store.list_sources(), self.policy)
+            evidence = retrieve(question.text, sources, self.policy)
             text, confidence = self.generator.generate(
                 question=question.text,
                 evidence=evidence,
@@ -100,26 +104,29 @@ class TrustFlowService:
                 sensitivity=question.sensitivity,
                 policy=self.policy,
             )
-            answer = DraftAnswer(
-                questionnaire_id=questionnaire.id,
-                question_id=question.id,
-                text=text,
-                status=status,
-                confidence=confidence,
-                evidence=evidence,
-                reasons=reasons,
+            answers.append(
+                DraftAnswer(
+                    questionnaire_id=questionnaire.id,
+                    question_id=question.id,
+                    text=text,
+                    status=status,
+                    confidence=confidence,
+                    evidence=evidence,
+                    reasons=reasons,
+                )
             )
-            self.store.put_answer(answer)
-            answers.append(answer)
-            self._audit(
-                "answer.drafted",
-                answer.id,
-                {
-                    "question_id": question.id,
-                    "status": status.value,
-                    "source_ids": [item.source_id for item in evidence],
-                },
-            )
+        with self.store.transaction() as transaction:
+            for answer in answers:
+                transaction.put_answer(answer)
+                transaction.append_audit_event(
+                    "answer.drafted",
+                    answer.id,
+                    {
+                        "question_id": answer.question_id,
+                        "status": answer.status.value,
+                        "source_ids": [item.source_id for item in answer.evidence],
+                    },
+                )
         return answers
 
     def review(
@@ -160,17 +167,15 @@ class TrustFlowService:
         binding_error = review_binding_error(answer, review)
         if binding_error is not None:
             raise InvalidTransitionError(f"invalid review binding: {binding_error}")
-        self.store.put_review(review)
-        self._audit(
-            "answer.reviewed",
-            review.id,
-            {
-                "answer_id": answer.id,
-                "answer_digest": review.answer_digest,
-                "state": state.value,
-                "reviewer": review.reviewer,
-            },
-        )
+        payload: dict[str, object] = {
+            "answer_id": answer.id,
+            "answer_digest": review.answer_digest,
+            "state": state.value,
+            "reviewer": review.reviewer,
+        }
+        with self.store.transaction() as transaction:
+            transaction.put_review(review)
+            transaction.append_audit_event("answer.reviewed", review.id, payload)
         return review
 
     def review_history(self, answer_id: str) -> list[ReviewDecision]:
@@ -268,9 +273,12 @@ class TrustFlowService:
         )
         return result
 
-    def impact_scan(self, source_id: str | None = None) -> list[ImpactFinding]:
+    def _impact_findings(
+        self,
+        current: dict[str, SourceDocument],
+        source_id: str | None = None,
+    ) -> list[ImpactFinding]:
         findings: list[ImpactFinding] = []
-        current = {source.id: source for source in self.store.list_sources()}
         current_time = datetime.now(UTC)
         for answer in self.store.list_answers():
             review = self.store.get_review_for_answer(answer.id)
@@ -314,6 +322,10 @@ class TrustFlowService:
                 item.reason,
             ),
         )
+
+    def impact_scan(self, source_id: str | None = None) -> list[ImpactFinding]:
+        current = {source.id: source for source in self.store.list_sources()}
+        return self._impact_findings(current, source_id)
 
     def metrics(self, questionnaire_id: str) -> dict[str, float | int]:
         if self.store.get_questionnaire(questionnaire_id) is None:
