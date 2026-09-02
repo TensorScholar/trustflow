@@ -34,10 +34,16 @@ from trustflow.domain.models import (
     ReviewState,
 )
 
+_MISSING_DIGEST = "0" * 64
+
 
 def _final_text(answer: DraftAnswer, review: ReviewDecision | None) -> str:
     if not answer.evidence:
         raise InvalidTransitionError("claim without evidence cannot be exported")
+    if any(item.source_digest == _MISSING_DIGEST for item in answer.evidence):
+        raise InvalidTransitionError(
+            "claim evidence snapshot is missing a source fingerprint"
+        )
     if review is None:
         if answer.status is not AnswerStatus.ANSWERED:
             raise InvalidTransitionError("unresolved answer cannot be exported")
