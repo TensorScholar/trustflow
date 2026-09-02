@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import re
 from datetime import UTC
 from types import TracebackType
@@ -18,7 +19,8 @@ from trustflow.domain.models import SourceClassification, SourceDocument
 
 _REPOSITORY_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 _GIT_SHA = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
-_DEFAULT_MAXIMUM_FILE_BYTES = 1_000_000
+_GITHUB_INLINE_FILE_LIMIT = 1_000_000
+_DEFAULT_MAXIMUM_FILE_BYTES = _GITHUB_INLINE_FILE_LIMIT
 _MAXIMUM_PATH_LENGTH = 4096
 
 TModel = TypeVar("TModel", bound=BaseModel)
@@ -92,6 +94,13 @@ def _safe_ref(ref: str) -> str:
     return ref
 
 
+def _git_blob_digest(raw: bytes, expected_sha: str) -> str:
+    payload = f"blob {len(raw)}\0".encode("ascii") + raw
+    if len(expected_sha) == 40:
+        return hashlib.sha1(payload, usedforsecurity=False).hexdigest()
+    return hashlib.sha256(payload).hexdigest()
+
+
 class GitHubEvidenceSource:
     """Fetch one explicit UTF-8 file from GitHub and bind it to file-level history."""
 
@@ -104,8 +113,10 @@ class GitHubEvidenceSource:
     ) -> None:
         if not token or any(character.isspace() for character in token):
             raise GitHubSourceError("GitHub token is required and cannot contain whitespace")
-        if maximum_file_bytes < 1:
-            raise GitHubSourceError("maximum_file_bytes must be positive")
+        if not 1 <= maximum_file_bytes <= _GITHUB_INLINE_FILE_LIMIT:
+            raise GitHubSourceError(
+                "maximum_file_bytes must be between 1 and the 1 MB GitHub inline-content limit"
+            )
         self.maximum_file_bytes = maximum_file_bytes
         self._client = httpx.Client(
             base_url="https://api.github.com",
@@ -199,6 +210,8 @@ class GitHubEvidenceSource:
             raise GitHubSourceError("GitHub source size does not match the API metadata")
         if len(raw) > self.maximum_file_bytes:
             raise GitHubSourceError("GitHub source exceeds the configured size limit")
+        if _git_blob_digest(raw, item.sha) != item.sha:
+            raise GitHubSourceError("GitHub source content does not match its Git blob identity")
         try:
             content = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
