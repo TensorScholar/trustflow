@@ -50,6 +50,8 @@ The repository commit is used only to make the fetch race-free. The resulting `S
 
 This distinction is intentional. An unrelated commit elsewhere in the repository must not make an unchanged evidence file appear newer or force a false source-version change. Conversely, a real change to the requested path—including a later revert—produces new file history and therefore a new source version/provenance event.
 
+`updated_at` is repository provenance, not an independent freshness attestation. Git commit timestamps are supplied by repository history and may be unusual or operator-controlled. TrustFlow can apply deterministic age policy to that metadata, but a passing age check does not independently prove when the underlying policy or control became operationally valid. Higher-assurance deployments need an authoritative source-specific validity/freshness policy outside this adapter.
+
 ## Safety boundary
 
 The adapter:
@@ -60,8 +62,9 @@ The adapter:
 - uses GET requests only against the fixed GitHub API origin;
 - accepts inline base64 file content only;
 - validates Git object identifiers and API response shapes;
+- recomputes the Git blob object identity over decoded bytes and rejects an API payload that does not match the reported blob SHA;
 - validates declared size against decoded size;
-- limits files to 1 MB by default;
+- hard-caps configured and retrieved files at GitHub's 1 MB inline-content boundary;
 - requires UTF-8 text and rejects NUL-containing binary-like content;
 - returns sanitized request failures without echoing response bodies or credentials.
 
@@ -69,7 +72,7 @@ The connector does not execute repository content. Retrieved text remains untrus
 
 ## Validation status
 
-Pull-request CI uses a deterministic mocked GitHub HTTP transport to exercise request shape, immutable fetch pinning, file-level version/freshness semantics, unrelated-repository-commit stability, credential non-persistence, redirect handling, malformed responses, unsafe locators, size limits, binary content, and approval semantics.
+Pull-request CI uses a deterministic mocked GitHub HTTP transport to exercise request shape, immutable fetch pinning, file-level version/freshness semantics, unrelated-repository-commit stability, blob-identity verification, credential non-persistence, redirect handling, malformed responses, unsafe locators, size limits, binary content, and approval semantics.
 
 After a change reaches `main`, CI also runs a real read-only smoke test against this repository's `SECURITY.md` using the ephemeral GitHub Actions token with `contents: read`. The smoke test exercises the real GitHub API, exact-file fetch, file-history lookup, immutable source URI, and default-unapproved behavior. It is deliberately not run for pull-request-controlled code with a runtime token.
 
