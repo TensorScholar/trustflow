@@ -165,6 +165,8 @@ def _docx_paragraph(document: DocumentObject, key: str) -> Paragraph:
 
 def _xlsx_target(sheet: Worksheet, question_cell: str) -> Cell:
     cell = sheet[question_cell]
+    if not isinstance(cell, Cell):
+        raise UnsafeExportError("XLSX question location is not a writable cell")
     merged_question = next(
         (merged for merged in sheet.merged_cells.ranges if cell.coordinate in merged),
         None,
@@ -177,6 +179,8 @@ def _xlsx_target(sheet: Worksheet, question_cell: str) -> Cell:
         raise UnsafeExportError(
             f"XLSX answer target is part of a merged range: {sheet.title}!{target.coordinate}"
         )
+    if not isinstance(target, Cell):
+        raise UnsafeExportError("XLSX answer target is not a writable cell")
     if target.value not in (None, ""):
         raise UnsafeExportError(
             f"XLSX answer target is occupied: {sheet.title}!{target.coordinate}"
