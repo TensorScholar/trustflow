@@ -75,9 +75,9 @@ def run_demo(directory: str | Path | None = None) -> dict[str, object]:
         service.review(
             answer.id,
             reviewer="demo-reviewer",
-            state=ReviewState.EDITED,
+            state=ReviewState.APPROVED,
             final_text=answer.text,
-            note="Deterministic demonstration review.",
+            note="Deterministic demonstration approval of the exact draft text.",
         )
     output = root / "completed.json"
     result = service.export(questionnaire.id, output)
