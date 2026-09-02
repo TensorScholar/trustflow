@@ -34,6 +34,7 @@ from trustflow.domain.models import (
     ReviewDecision,
     ReviewState,
 )
+from trustflow.domain.review import review_binding_error
 
 _MISSING_DIGEST = "0" * 64
 _MAX_XLSX_COLUMN = 16_384
@@ -48,6 +49,9 @@ def _final_text(answer: DraftAnswer, review: ReviewDecision | None) -> str:
         if answer.status is not AnswerStatus.ANSWERED:
             raise InvalidTransitionError("unresolved answer cannot be exported")
         return answer.text
+    binding_error = review_binding_error(answer, review)
+    if binding_error is not None:
+        raise InvalidTransitionError(f"review does not bind to current answer: {binding_error}")
     if review.state not in {ReviewState.APPROVED, ReviewState.EDITED}:
         raise InvalidTransitionError("rejected review cannot be exported")
     if answer.status is AnswerStatus.UNANSWERABLE:
