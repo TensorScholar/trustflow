@@ -126,7 +126,7 @@ class SQLiteStore:
             connection.execute("PRAGMA synchronous=NORMAL")
             yield connection
             connection.commit()
-        except Exception:
+        except BaseException:
             connection.rollback()
             raise
         finally:
