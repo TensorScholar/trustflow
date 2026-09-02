@@ -58,6 +58,14 @@ class ReviewState(StrEnum):
     EDITED = "edited"
 
 
+class ExportRecoveryStatus(StrEnum):
+    RECOVERABLE_FINAL = "recoverable_final"
+    RECOVERABLE_STAGED = "recoverable_staged"
+    ARTIFACT_MISSING = "artifact_missing"
+    STAGING_DIGEST_MISMATCH = "staging_digest_mismatch"
+    DESTINATION_CONFLICT = "destination_conflict"
+
+
 class SourceDocument(StrictModel):
     id: NonEmptyText
     title: NonEmptyText
@@ -152,6 +160,15 @@ class ExportResult(StrictModel):
     review_required: int
     unanswerable: int
     exported_at: AwareDatetime = Field(default_factory=utc_now)
+
+
+class ExportRecoveryFinding(StrictModel):
+    operation_id: NonEmptyText
+    questionnaire_id: NonEmptyText
+    output_path: NonEmptyText
+    staging_path: NonEmptyText
+    expected_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: ExportRecoveryStatus
 
 
 class ImpactFinding(StrictModel):
