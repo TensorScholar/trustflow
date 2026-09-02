@@ -84,7 +84,9 @@ def ingest_github_source(
 ) -> None:
     token = os.environ.get("TRUSTFLOW_GITHUB_TOKEN", "")
     if not token:
-        raise typer.BadParameter("set TRUSTFLOW_GITHUB_TOKEN; tokens are never accepted as CLI args")
+        raise typer.BadParameter(
+            "set TRUSTFLOW_GITHUB_TOKEN; tokens are never accepted as CLI args"
+        )
     try:
         from trustflow.adapters.github_source import GitHubEvidenceSource
     except ImportError as exc:
