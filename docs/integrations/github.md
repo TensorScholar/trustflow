@@ -69,6 +69,8 @@ The connector does not execute repository content. Retrieved text remains untrus
 
 ## Validation status
 
-CI uses a deterministic mocked GitHub HTTP transport to exercise request shape, immutable fetch pinning, file-level version/freshness semantics, unrelated-repository-commit stability, credential non-persistence, redirect handling, malformed responses, unsafe locators, size limits, binary content, and approval semantics.
+Pull-request CI uses a deterministic mocked GitHub HTTP transport to exercise request shape, immutable fetch pinning, file-level version/freshness semantics, unrelated-repository-commit stability, credential non-persistence, redirect handling, malformed responses, unsafe locators, size limits, binary content, and approval semantics.
 
-CI does **not** prove that a real organization credential has the intended repository permissions, that a deployed GitHub API version remains compatible, or that GitHub is reachable from a particular deployment. A credentialed live smoke test is therefore an operational validation step, not a claim made by the automated test suite.
+After a change reaches `main`, CI also runs a real read-only smoke test against this repository's `SECURITY.md` using the ephemeral GitHub Actions token with `contents: read`. The smoke test exercises the real GitHub API, exact-file fetch, file-history lookup, immutable source URI, and default-unapproved behavior. It is deliberately not run for pull-request-controlled code with a runtime token.
+
+A passing live smoke verifies compatibility and reachability for that GitHub-hosted execution at that point in time. It does **not** prove that an arbitrary organization credential is least-privileged, correctly governed by SSO, valid for a private repository, or operationally rotated. Those remain deployment-specific responsibilities.
