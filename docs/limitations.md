@@ -8,6 +8,9 @@
 - conflict detection is conservative and lexical;
 - reviewer values are caller-supplied labels, not authenticated or cryptographically verified
   identities;
+- evidence snapshots persisted before source-provenance binding are intentionally untrusted after
+  upgrade; affected answers must be redrafted and, when applicable, reviewed again rather than
+  inheriting an older approval;
 - SQLite is single-node; concurrent local writers are serialized, but distributed operation is
   unsupported;
 - the optional API has no authentication, authorization, tenant isolation, rate limiting, or DLP
