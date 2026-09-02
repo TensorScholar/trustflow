@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import re
 
 from trustflow.adapters.github_source import GitHubEvidenceSource
+
+_GIT_SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 def _required_environment(name: str) -> str:
@@ -31,10 +34,11 @@ def main() -> None:
         raise SystemExit("live GitHub evidence source must remain unapproved by default")
     if "# Security policy" not in source.content:
         raise SystemExit("live GitHub evidence source content did not match SECURITY.md")
-    if not source.source_uri.startswith(f"https://github.com/{repository}/blob/"):
-        raise SystemExit("live GitHub evidence source URI was not pinned to GitHub")
-    if source.version == commit_sha and "/SECURITY.md" not in source.source_uri:
-        raise SystemExit("live GitHub evidence source did not retain file identity")
+    if not _GIT_SHA.fullmatch(source.version):
+        raise SystemExit("live GitHub evidence source version was not an immutable Git commit SHA")
+    expected_uri = f"https://github.com/{repository}/blob/{source.version}/SECURITY.md"
+    if source.source_uri != expected_uri:
+        raise SystemExit("live GitHub evidence source URI was not pinned to its file revision")
 
     print(
         "live GitHub evidence smoke passed: "
