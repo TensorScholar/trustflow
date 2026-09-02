@@ -34,6 +34,22 @@ class FailingAuditMemoryStore(MemoryStore):
         return super().append_audit_event(event_type, entity_id, payload)
 
 
+class FailingSecondGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(
+        self,
+        *,
+        question: str,
+        evidence: tuple[object, ...],
+    ) -> tuple[str, float]:
+        self.calls += 1
+        if self.calls == 2:
+            raise RuntimeError("injected generator failure")
+        return ("Supported answer.", 0.9)
+
+
 def _service(store: MemoryStore) -> TrustFlowService:
     return TrustFlowService(
         store=store,
@@ -73,6 +89,22 @@ def test_source_mutation_rolls_back_when_audit_append_fails() -> None:
     assert store.list_audit() == []
 
 
+def test_source_replacement_restores_previous_value_when_audit_append_fails() -> None:
+    store = FailingAuditMemoryStore()
+    service = _service(store)
+    original = _source()
+    service.ingest_source(original)
+    audit_before = store.list_audit()
+    store.fail_audit_after(0)
+
+    with pytest.raises(RuntimeError, match="injected audit failure"):
+        service.ingest_source(original.model_copy(update={"version": "2"}))
+
+    assert store.get_source("security") == original
+    assert store.list_audit() == audit_before
+    verify_chain(store.list_audit())
+
+
 def test_questionnaire_import_rolls_back_when_audit_append_fails(tmp_path) -> None:
     store = FailingAuditMemoryStore()
     service = _service(store)
@@ -102,6 +134,34 @@ def test_draft_batch_rolls_back_when_later_audit_append_fails(tmp_path) -> None:
     store.fail_audit_after(1)
 
     with pytest.raises(RuntimeError, match="injected audit failure"):
+        service.draft(questionnaire.id)
+
+    assert store.list_answers(questionnaire.id) == []
+    assert store.list_audit() == audit_before
+    verify_chain(store.list_audit())
+
+
+def test_generator_failure_does_not_leave_partial_draft(tmp_path) -> None:
+    store = MemoryStore()
+    service = TrustFlowService(
+        store=store,
+        parser=ParserRegistry(),
+        exporter=ExporterRegistry(),
+        generator=FailingSecondGenerator(),
+    )
+    service.ingest_source(_source())
+    questionnaire = service.import_questionnaire(
+        _questionnaire(
+            tmp_path,
+            [
+                "Do you encrypt customer data at rest?",
+                "Do you encrypt customer data?",
+            ],
+        )
+    )
+    audit_before = store.list_audit()
+
+    with pytest.raises(RuntimeError, match="injected generator failure"):
         service.draft(questionnaire.id)
 
     assert store.list_answers(questionnaire.id) == []
