@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from importlib.resources import files
 from typing import Literal
 
