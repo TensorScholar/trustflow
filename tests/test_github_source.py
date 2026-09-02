@@ -1,5 +1,4 @@
 import base64
-from collections.abc import Callable
 
 import httpx
 import pytest
@@ -7,7 +6,9 @@ import pytest
 from trustflow.adapters.github_source import GitHubEvidenceSource, GitHubSourceError
 from trustflow.domain.models import SourceClassification
 
-COMMIT_SHA = "a" * 40
+RESOLVED_COMMIT_SHA = "a" * 40
+FILE_COMMIT_SHA = "b" * 40
+BLOB_SHA = "c" * 40
 
 
 def _transport(
@@ -17,22 +18,38 @@ def _transport(
     declared_size: int | None = None,
     encoding: str | None = "base64",
     encoded_content: str | None = None,
+    resolved_commit_sha: str = RESOLVED_COMMIT_SHA,
+    file_commit_sha: str = FILE_COMMIT_SHA,
+    file_history: bool = True,
 ) -> tuple[httpx.MockTransport, list[httpx.Request]]:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.url.path.endswith("/commits"):
+            if not file_history:
+                return httpx.Response(200, json=[])
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "sha": file_commit_sha,
+                        "commit": {"committer": {"date": "2026-08-29T09:30:00Z"}},
+                    }
+                ],
+            )
         if "/commits/" in request.url.path:
             return httpx.Response(
                 200,
                 json={
-                    "sha": COMMIT_SHA,
+                    "sha": resolved_commit_sha,
                     "commit": {"committer": {"date": "2026-08-31T10:00:00Z"}},
                 },
             )
         payload = {
             "type": content_type,
             "size": len(content) if declared_size is None else declared_size,
+            "sha": BLOB_SHA,
             "encoding": encoding,
             "content": (
                 base64.b64encode(content).decode("ascii")
@@ -47,22 +64,30 @@ def _transport(
 
 def _load(
     transport: httpx.BaseTransport,
-    **overrides: object,
+    *,
+    repository: str = "acme/security-policies",
+    path: str = "docs/security.md",
+    ref: str = "main",
+    identifier: str = "github-security",
+    title: str = "GitHub security policy",
+    evidence_owner: str = "security",
+    classification: SourceClassification = SourceClassification.INTERNAL,
+    approved: bool = False,
 ):
-    kwargs: dict[str, object] = {
-        "repository": "acme/security-policies",
-        "path": "docs/security.md",
-        "ref": "main",
-        "identifier": "github-security",
-        "title": "GitHub security policy",
-        "evidence_owner": "security",
-    }
-    kwargs.update(overrides)
     with GitHubEvidenceSource(token="secret-token", transport=transport) as connector:
-        return connector.load_file(**kwargs)  # type: ignore[arg-type]
+        return connector.load_file(
+            repository=repository,
+            path=path,
+            ref=ref,
+            identifier=identifier,
+            title=title,
+            evidence_owner=evidence_owner,
+            classification=classification,
+            approved=approved,
+        )
 
 
-def test_github_source_resolves_ref_then_pins_exact_commit() -> None:
+def test_github_source_pins_fetch_and_uses_file_level_version_freshness() -> None:
     transport, requests = _transport()
     source = _load(
         transport,
@@ -70,18 +95,37 @@ def test_github_source_resolves_ref_then_pins_exact_commit() -> None:
         path="docs/security policy.md",
     )
 
-    assert source.version == COMMIT_SHA
+    assert source.version == FILE_COMMIT_SHA
     assert source.content == "Customer data is encrypted at rest with AES-256."
     assert source.approved is False
-    assert source.updated_at.isoformat() == "2026-08-31T10:00:00+00:00"
+    assert source.updated_at.isoformat() == "2026-08-29T09:30:00+00:00"
     assert source.source_uri == (
-        f"https://github.com/acme/security-policies/blob/{COMMIT_SHA}/docs/security%20policy.md"
+        f"https://github.com/acme/security-policies/blob/"
+        f"{FILE_COMMIT_SHA}/docs/security%20policy.md"
     )
-    assert len(requests) == 2
+    assert len(requests) == 3
     assert b"release%2F2026" in requests[0].url.raw_path
-    assert requests[1].url.params["ref"] == COMMIT_SHA
+    assert requests[1].url.params["ref"] == RESOLVED_COMMIT_SHA
+    assert requests[2].url.params["sha"] == RESOLVED_COMMIT_SHA
+    assert requests[2].url.params["path"] == "docs/security policy.md"
+    assert requests[2].url.params["per_page"] == "1"
+    assert all(request.method == "GET" for request in requests)
+    assert all(request.url.host == "api.github.com" for request in requests)
     assert all(request.headers["authorization"] == "Bearer secret-token" for request in requests)
     assert "secret-token" not in source.model_dump_json()
+
+
+def test_unrelated_repository_commit_does_not_change_file_source_identity() -> None:
+    first_transport, _ = _transport(resolved_commit_sha="d" * 40)
+    second_transport, _ = _transport(resolved_commit_sha="e" * 40)
+
+    first = _load(first_transport)
+    second = _load(second_transport)
+
+    assert first.version == second.version == FILE_COMMIT_SHA
+    assert first.updated_at == second.updated_at
+    assert first.source_uri == second.source_uri
+    assert first.content == second.content
 
 
 def test_github_source_requires_explicit_approval() -> None:
@@ -104,6 +148,7 @@ def test_github_source_requires_explicit_approval() -> None:
         ("path", "docs/../secret.md"),
         ("path", "docs\\secret.md"),
         ("path", "docs//secret.md"),
+        ("path", "docs/secret\nheader.md"),
         ("ref", ""),
         ("ref", "main\nAuthorization: bad"),
     ],
@@ -190,13 +235,16 @@ def test_github_source_rejects_invalid_inline_content(
         _load(transport)
 
 
-def test_github_source_rejects_invalid_api_shape() -> None:
-    responses: list[Callable[[httpx.Request], httpx.Response]] = [
-        lambda request: httpx.Response(200, json={"sha": "not-a-sha", "commit": {}}),
-    ]
+def test_github_source_rejects_empty_file_history() -> None:
+    transport, _ = _transport(file_history=False)
+    with pytest.raises(GitHubSourceError, match="no commit history"):
+        _load(transport)
 
+
+def test_github_source_rejects_invalid_api_shape() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return responses[0](request)
+        del request
+        return httpx.Response(200, json={"sha": "not-a-sha", "commit": {}})
 
     with GitHubEvidenceSource(
         token="secret-token",
@@ -213,6 +261,27 @@ def test_github_source_rejects_invalid_api_shape() -> None:
             )
 
 
+def test_github_source_sanitizes_transport_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("secret-token upstream diagnostic", request=request)
+
+    with GitHubEvidenceSource(
+        token="secret-token",
+        transport=httpx.MockTransport(handler),
+    ) as connector:
+        with pytest.raises(GitHubSourceError, match="GitHub API request failed") as exc_info:
+            connector.load_file(
+                repository="acme/security-policies",
+                path="docs/security.md",
+                ref="main",
+                identifier="github-security",
+                title="GitHub security policy",
+                evidence_owner="security",
+            )
+    assert "secret-token" not in str(exc_info.value)
+
+
 def test_github_source_rejects_whitespace_in_token() -> None:
-    with pytest.raises(GitHubSourceError, match="token"):
-        GitHubEvidenceSource(token=" secret-token ")
+    for token in (" secret-token ", "secret token", "secret\ntoken"):
+        with pytest.raises(GitHubSourceError, match="token"):
+            GitHubEvidenceSource(token=token)
