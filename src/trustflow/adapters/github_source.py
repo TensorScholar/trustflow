@@ -6,6 +6,7 @@ import base64
 import binascii
 import re
 from datetime import UTC
+from types import TracebackType
 from typing import TypeVar
 from urllib.parse import quote
 
@@ -18,6 +19,7 @@ from trustflow.domain.models import SourceClassification, SourceDocument
 _REPOSITORY_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 _COMMIT_SHA = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
 _DEFAULT_MAXIMUM_FILE_BYTES = 1_000_000
+_MAXIMUM_PATH_LENGTH = 4096
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -50,6 +52,10 @@ class _ContentResponse(_ApiModel):
     content: str | None = None
 
 
+def _has_control_character(value: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)
+
+
 def _repository_parts(repository: str) -> tuple[str, str]:
     parts = repository.split("/")
     if len(parts) != 2 or not all(_REPOSITORY_COMPONENT.fullmatch(part) for part in parts):
@@ -61,8 +67,14 @@ def _repository_parts(repository: str) -> tuple[str, str]:
 
 
 def _safe_repository_path(path: str) -> str:
-    if not path or path.startswith("/") or "\\" in path or "\x00" in path:
-        raise GitHubSourceError("GitHub source path must be a relative repository file path")
+    if (
+        not path
+        or len(path) > _MAXIMUM_PATH_LENGTH
+        or path.startswith("/")
+        or "\\" in path
+        or _has_control_character(path)
+    ):
+        raise GitHubSourceError("GitHub source path must be a safe relative repository file path")
     parts = path.split("/")
     if any(part in {"", ".", ".."} for part in parts):
         raise GitHubSourceError("GitHub source path contains an unsafe path component")
@@ -70,7 +82,7 @@ def _safe_repository_path(path: str) -> str:
 
 
 def _safe_ref(ref: str) -> str:
-    if not ref or len(ref) > 255 or any(ord(character) < 32 for character in ref):
+    if not ref or len(ref) > 255 or _has_control_character(ref):
         raise GitHubSourceError("GitHub ref is invalid")
     return ref
 
@@ -85,8 +97,8 @@ class GitHubEvidenceSource:
         maximum_file_bytes: int = _DEFAULT_MAXIMUM_FILE_BYTES,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        if not token or token != token.strip():
-            raise GitHubSourceError("GitHub token is required and must not contain outer whitespace")
+        if not token or any(character.isspace() for character in token):
+            raise GitHubSourceError("GitHub token is required and cannot contain whitespace")
         if maximum_file_bytes < 1:
             raise GitHubSourceError("maximum_file_bytes must be positive")
         self.maximum_file_bytes = maximum_file_bytes
@@ -106,7 +118,13 @@ class GitHubEvidenceSource:
     def __enter__(self) -> GitHubEvidenceSource:
         return self
 
-    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        del exc_type, exc, traceback
         self.close()
 
     def close(self) -> None:
