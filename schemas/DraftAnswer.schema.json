@@ -40,6 +40,12 @@
           "title": "Source Id",
           "type": "string"
         },
+        "source_provenance_digest": {
+          "default": "0000000000000000000000000000000000000000000000000000000000000000",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Provenance Digest",
+          "type": "string"
+        },
         "source_title": {
           "minLength": 1,
           "title": "Source Title",
