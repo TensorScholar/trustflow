@@ -16,10 +16,21 @@ def source_content_digest(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def _canonical_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
 def source_provenance_digest(source: SourceDocument) -> str:
     """Fingerprint governance metadata whose drift must invalidate an evidence snapshot."""
-    metadata = source.model_dump(mode="json", exclude={"content", "tags"})
+    metadata = source.model_dump(
+        mode="json",
+        exclude={"content", "tags", "updated_at", "valid_until"},
+    )
     metadata["tags"] = sorted(source.tags)
+    metadata["updated_at"] = _canonical_timestamp(source.updated_at)
+    metadata["valid_until"] = _canonical_timestamp(source.valid_until)
     payload = json.dumps(
         metadata,
         ensure_ascii=False,
