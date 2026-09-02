@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -158,6 +158,13 @@ def test_source_update_reports_reviewed_impact_and_blocks_export(service, tmp_pa
 def test_provenance_digest_is_stable_for_identical_source() -> None:
     source = _source()
     assert source_provenance_digest(source) == source_provenance_digest(source.model_copy())
+
+
+def test_equivalent_timezone_offsets_have_same_provenance_digest() -> None:
+    source = _source()
+    same_instant = source.updated_at.astimezone(timezone(timedelta(hours=3, minutes=30)))
+    shifted = source.model_copy(update={"updated_at": same_instant})
+    assert source_provenance_digest(source) == source_provenance_digest(shifted)
 
 
 def test_provenance_digest_changes_when_freshness_is_extended() -> None:
