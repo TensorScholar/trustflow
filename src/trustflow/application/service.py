@@ -21,6 +21,7 @@ from trustflow.domain.models import (
 )
 from trustflow.domain.policy import decide_status
 from trustflow.domain.retrieval import retrieve
+from trustflow.domain.review import answer_state_digest, review_binding_error
 from trustflow.ports.interfaces import (
     AnswerGenerator,
     QuestionnaireExporter,
@@ -136,20 +137,38 @@ class TrustFlowService:
             )
         if state in {ReviewState.APPROVED, ReviewState.EDITED} and not final_text.strip():
             raise InvalidTransitionError("approved or edited review requires non-blank final text")
+        if state is ReviewState.APPROVED and final_text != answer.text:
+            raise InvalidTransitionError("approved review must preserve the exact draft text")
+        if state is ReviewState.EDITED and final_text == answer.text:
+            raise InvalidTransitionError("edited review must contain a changed final text")
         review = ReviewDecision(
             answer_id=answer.id,
+            answer_digest=answer_state_digest(answer),
             reviewer=reviewer,
             state=state,
             final_text="" if state is ReviewState.REJECTED else final_text,
             note=note,
         )
+        binding_error = review_binding_error(answer, review)
+        if binding_error is not None:
+            raise InvalidTransitionError(f"invalid review binding: {binding_error}")
         self.store.put_review(review)
         self._audit(
             "answer.reviewed",
             review.id,
-            {"answer_id": answer.id, "state": state.value, "reviewer": review.reviewer},
+            {
+                "answer_id": answer.id,
+                "answer_digest": review.answer_digest,
+                "state": state.value,
+                "reviewer": review.reviewer,
+            },
         )
         return review
+
+    def review_history(self, answer_id: str) -> list[ReviewDecision]:
+        if self.store.get_answer(answer_id) is None:
+            raise NotFoundError(f"answer not found: {answer_id}")
+        return self.store.list_reviews_for_answer(answer_id)
 
     def _validated_answers(self, questionnaire: Questionnaire) -> list[DraftAnswer]:
         answers = self.store.list_answers(questionnaire.id)
@@ -173,6 +192,10 @@ class TrustFlowService:
             review = self.store.get_review_for_answer(answer.id)
             if review is not None:
                 reviews[answer.id] = review
+                binding_error = review_binding_error(answer, review)
+                if binding_error is not None:
+                    blocked.append(f"{answer.question_id}:{binding_error}")
+                    continue
             if review is not None and review.state is ReviewState.REJECTED:
                 blocked.append(f"{answer.question_id}:rejected")
                 continue

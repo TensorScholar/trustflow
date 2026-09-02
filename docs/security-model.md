@@ -7,7 +7,7 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - proprietary questionnaires;
 - internal policies and approved answer libraries;
 - externally shared claims;
-- reviewer identity and decisions;
+- reviewer labels and decisions;
 - source-version history and audit evidence.
 
 ## Primary threats
@@ -20,7 +20,8 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 6. arbitrary server-local file access through the web adapter;
 7. concurrent audit writers corrupting sequence or chain integrity;
 8. future cross-tenant retrieval or over-privileged enterprise connectors;
-9. source changes leaving previously approved answers stale.
+9. source changes leaving previously approved answers stale;
+10. stale review replay after the reviewed draft or evidence snapshot changes.
 
 ## Current controls
 
@@ -32,7 +33,9 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - approved/current source filtering;
 - sensitivity, staleness and conflict gates;
 - fail-closed human-review requirements at service and exporter boundaries;
-- same-source-path rejection and atomic destination replacement;
+- review decisions bound to a canonical digest of the exact draft and evidence snapshot;
+- append-only review history with the latest recorded decision governing export;
+- same-source-path rejection and atomic create-if-absent destination commit;
 - controlled multipart upload storage for the optional API;
 - transactional SQLite audit sequencing with a hash-linked event chain;
 - source-version impact scans.
@@ -44,8 +47,9 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 | Malicious document | Parser receives an unsafe container | Reject unsafe archive/package properties; maintain hostile fixture tests |
 | Formula injection | Exported cell is interpreted as a formula | Neutralize dangerous prefixes and verify round trips |
 | Review bypass | Sensitive/stale/conflicting/unsupported answer is exported | Fail closed; negative export tests |
+| Review replay | An old approval is reused after draft/evidence mutation | Bind decision to exact answer-state digest; preserve review history; fail closed on mismatch |
 | Unsupported claim | Generator invents an answer | Evidence-only generation; unsupported-answer metric |
-| Source mutation | Export overwrites or partially corrupts input | Reject source destination; atomic replacement |
+| Source mutation | Export overwrites or partially corrupts input | Bind locations to source digest; reject source destination; atomic no-overwrite commit |
 | Stale evidence | Old policy remains approved | Version/freshness metadata and impact scans |
 | Conflicting evidence | Disagreeing sources produce confident output | Conservative conflict status and human review |
 | API file disclosure | Remote caller reads server-local paths | Multipart upload only; generated storage names; response redaction |
@@ -56,6 +60,6 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 
 ## Residual risk
 
-TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or enterprise connector credential system. The optional API does not provide the production controls listed in `SECURITY.md`.
+TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or enterprise connector credential system. Reviewer values are caller-supplied labels rather than authenticated identities. The optional API does not provide the production controls listed in `SECURITY.md`.
 
 These are explicit release boundaries, not implied future guarantees. See [limitations](limitations.md).

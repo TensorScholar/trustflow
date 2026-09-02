@@ -10,6 +10,7 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from trustflow.domain.audit import make_event
+from trustflow.domain.errors import InvalidTransitionError
 from trustflow.domain.models import (
     AuditEvent,
     DraftAnswer,
@@ -38,12 +39,30 @@ class SQLiteStore:
                     answer_id TEXT PRIMARY KEY,
                     payload TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS review_decisions (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id TEXT NOT NULL UNIQUE,
+                    answer_id TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_decisions_answer_sequence
+                    ON review_decisions(answer_id, sequence);
                 CREATE TABLE IF NOT EXISTS audit_events (
                     sequence INTEGER PRIMARY KEY,
                     payload TEXT NOT NULL
                 );
                 """
             )
+            legacy_rows = connection.execute("SELECT payload FROM reviews").fetchall()
+            for (payload,) in legacy_rows:
+                review = ReviewDecision.model_validate_json(payload)
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO review_decisions(id,answer_id,payload)
+                    VALUES(?,?,?)
+                    """,
+                    (review.id, review.answer_id, review.model_dump_json()),
+                )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -110,18 +129,36 @@ class SQLiteStore:
         )
 
     def put_review(self, review: ReviewDecision) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                "INSERT OR REPLACE INTO reviews(answer_id,payload) VALUES(?,?)",
-                (review.answer_id, review.model_dump_json()),
-            )
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    "INSERT INTO review_decisions(id,answer_id,payload) VALUES(?,?,?)",
+                    (review.id, review.answer_id, review.model_dump_json()),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise InvalidTransitionError(f"review decision already exists: {review.id}") from exc
 
     def get_review_for_answer(self, answer_id: str) -> ReviewDecision | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT payload FROM reviews WHERE answer_id=?", (answer_id,)
+                """
+                SELECT payload FROM review_decisions
+                WHERE answer_id=? ORDER BY sequence DESC LIMIT 1
+                """,
+                (answer_id,),
             ).fetchone()
         return ReviewDecision.model_validate_json(row[0]) if row else None
+
+    def list_reviews_for_answer(self, answer_id: str) -> list[ReviewDecision]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload FROM review_decisions
+                WHERE answer_id=? ORDER BY sequence
+                """,
+                (answer_id,),
+            ).fetchall()
+        return [ReviewDecision.model_validate_json(row[0]) for row in rows]
 
     def append_audit(self, event: AuditEvent) -> None:
         with self._connect() as connection:

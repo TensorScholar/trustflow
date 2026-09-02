@@ -12,6 +12,12 @@
   },
   "additionalProperties": false,
   "properties": {
+    "answer_digest": {
+      "default": "0000000000000000000000000000000000000000000000000000000000000000",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Answer Digest",
+      "type": "string"
+    },
     "answer_id": {
       "minLength": 1,
       "title": "Answer Id",
