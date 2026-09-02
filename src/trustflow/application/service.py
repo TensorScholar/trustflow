@@ -205,6 +205,7 @@ class TrustFlowService:
                 continue
             for evidence in answer.evidence:
                 source = current.get(evidence.source_id)
+                reason: str | None
                 if source is None:
                     reason = "source_removed"
                 else:
@@ -243,6 +244,7 @@ class TrustFlowService:
         for answer in self.store.list_answers():
             for evidence in answer.evidence:
                 source = current.get(evidence.source_id)
+                reason: str | None
                 if source is None:
                     reason = "source_removed"
                     current_version = None
