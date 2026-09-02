@@ -192,16 +192,15 @@ def test_github_source_does_not_follow_redirects_or_echo_error_body() -> None:
     with GitHubEvidenceSource(
         token="secret-token",
         transport=httpx.MockTransport(handler),
-    ) as connector:
-        with pytest.raises(GitHubSourceError, match="status 302") as exc_info:
-            connector.load_file(
-                repository="acme/security-policies",
-                path="docs/security.md",
-                ref="main",
-                identifier="github-security",
-                title="GitHub security policy",
-                evidence_owner="security",
-            )
+    ) as connector, pytest.raises(GitHubSourceError, match="status 302") as exc_info:
+        connector.load_file(
+            repository="acme/security-policies",
+            path="docs/security.md",
+            ref="main",
+            identifier="github-security",
+            title="GitHub security policy",
+            evidence_owner="security",
+        )
     assert "secret-token" not in str(exc_info.value)
 
 
@@ -266,16 +265,15 @@ def test_github_source_rejects_invalid_api_shape() -> None:
     with GitHubEvidenceSource(
         token="secret-token",
         transport=httpx.MockTransport(handler),
-    ) as connector:
-        with pytest.raises(GitHubSourceError, match="invalid response shape"):
-            connector.load_file(
-                repository="acme/security-policies",
-                path="docs/security.md",
-                ref="main",
-                identifier="github-security",
-                title="GitHub security policy",
-                evidence_owner="security",
-            )
+    ) as connector, pytest.raises(GitHubSourceError, match="invalid response shape"):
+        connector.load_file(
+            repository="acme/security-policies",
+            path="docs/security.md",
+            ref="main",
+            identifier="github-security",
+            title="GitHub security policy",
+            evidence_owner="security",
+        )
 
 
 def test_github_source_sanitizes_transport_errors() -> None:
@@ -285,16 +283,17 @@ def test_github_source_sanitizes_transport_errors() -> None:
     with GitHubEvidenceSource(
         token="secret-token",
         transport=httpx.MockTransport(handler),
-    ) as connector:
-        with pytest.raises(GitHubSourceError, match="GitHub API request failed") as exc_info:
-            connector.load_file(
-                repository="acme/security-policies",
-                path="docs/security.md",
-                ref="main",
-                identifier="github-security",
-                title="GitHub security policy",
-                evidence_owner="security",
-            )
+    ) as connector, pytest.raises(
+        GitHubSourceError, match="GitHub API request failed"
+    ) as exc_info:
+        connector.load_file(
+            repository="acme/security-policies",
+            path="docs/security.md",
+            ref="main",
+            identifier="github-security",
+            title="GitHub security policy",
+            evidence_owner="security",
+        )
     assert "secret-token" not in str(exc_info.value)
 
 
