@@ -122,7 +122,8 @@ class ParserRegistry:
                         row_dimension = sheet.row_dimensions.get(cell.row)
                         if row_dimension is not None and row_dimension.hidden:
                             raise InvalidQuestionnaireError(
-                                f"question detected on hidden XLSX row: {sheet.title}!{cell.coordinate}"
+                                "question detected on hidden XLSX row: "
+                                f"{sheet.title}!{cell.coordinate}"
                             )
                         if _xlsx_column_hidden(sheet, cell.column):
                             raise InvalidQuestionnaireError(
