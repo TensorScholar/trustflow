@@ -8,7 +8,7 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - internal policies and approved answer libraries;
 - externally shared claims;
 - reviewer labels and decisions;
-- source-version history and audit evidence.
+- source-version, provenance and audit evidence.
 
 ## Primary threats
 
@@ -20,7 +20,7 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 6. arbitrary server-local file access through the web adapter;
 7. concurrent audit writers corrupting sequence or chain integrity;
 8. future cross-tenant retrieval or over-privileged enterprise connectors;
-9. source changes leaving previously approved answers stale;
+9. source content or provenance metadata changing while dependent answer snapshots remain trusted;
 10. stale review replay after the reviewed draft or evidence snapshot changes.
 
 ## Current controls
@@ -35,10 +35,11 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - fail-closed human-review requirements at service and exporter boundaries;
 - review decisions bound to a canonical digest of the exact draft and evidence snapshot;
 - append-only review history with the latest recorded decision governing export;
+- evidence snapshots bound independently to source content and canonical source provenance metadata;
 - same-source-path rejection and atomic create-if-absent destination commit;
 - controlled multipart upload storage for the optional API;
 - transactional SQLite audit sequencing with a hash-linked event chain;
-- source-version impact scans.
+- deterministic source-content/provenance impact scans with latest review context.
 
 ## Risk register
 
@@ -50,6 +51,7 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 | Review replay | An old approval is reused after draft/evidence mutation | Bind decision to exact answer-state digest; preserve review history; fail closed on mismatch |
 | Unsupported claim | Generator invents an answer | Evidence-only generation; unsupported-answer metric |
 | Source mutation | Export overwrites or partially corrupts input | Bind locations to source digest; reject source destination; atomic no-overwrite commit |
+| Provenance drift | Source owner, URI, classification, freshness, validity or other metadata changes without content/version change | Bind exact non-content source metadata to a canonical provenance digest; invalidate dependent evidence on drift |
 | Stale evidence | Old policy remains approved | Version/freshness metadata and impact scans |
 | Conflicting evidence | Disagreeing sources produce confident output | Conservative conflict status and human review |
 | API file disclosure | Remote caller reads server-local paths | Multipart upload only; generated storage names; response redaction |

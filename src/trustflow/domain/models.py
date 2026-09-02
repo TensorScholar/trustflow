@@ -105,6 +105,7 @@ class Evidence(StrictModel):
     source_uri: NonEmptyText
     source_version: NonEmptyText
     source_digest: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
+    source_provenance_digest: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     owner: NonEmptyText
     excerpt: str
     score: Confidence
@@ -154,12 +155,15 @@ class ExportResult(StrictModel):
 
 
 class ImpactFinding(StrictModel):
+    questionnaire_id: str
     answer_id: str
     question_id: str
     source_id: str
     previous_version: str
     current_version: str | None
     reason: str
+    review_id: str | None = None
+    review_state: ReviewState | None = None
 
 
 class PolicySettings(StrictModel):

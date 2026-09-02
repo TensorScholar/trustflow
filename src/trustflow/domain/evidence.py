@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 
 from trustflow.domain.models import Evidence, PolicySettings, SourceDocument
@@ -15,6 +16,30 @@ def source_content_digest(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def _canonical_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def source_provenance_digest(source: SourceDocument) -> str:
+    """Fingerprint governance metadata whose drift must invalidate an evidence snapshot."""
+    metadata = source.model_dump(
+        mode="json",
+        exclude={"content", "tags", "updated_at", "valid_until"},
+    )
+    metadata["tags"] = sorted(source.tags)
+    metadata["updated_at"] = _canonical_timestamp(source.updated_at)
+    metadata["valid_until"] = _canonical_timestamp(source.valid_until)
+    payload = json.dumps(
+        metadata,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def evidence_invalidation_reason(
     source: SourceDocument,
     evidence: Evidence,
@@ -24,7 +49,10 @@ def evidence_invalidation_reason(
 ) -> str | None:
     """Return the deterministic reason an evidence snapshot is no longer reusable."""
     current_time = now or datetime.now(UTC)
-    if evidence.source_digest == _MISSING_DIGEST:
+    if (
+        evidence.source_digest == _MISSING_DIGEST
+        or evidence.source_provenance_digest == _MISSING_DIGEST
+    ):
         return "source_snapshot_missing"
     if policy.require_approved_sources and not source.approved:
         return "source_revoked"
@@ -37,4 +65,6 @@ def evidence_invalidation_reason(
     age_days = max(0, (current_time - source.updated_at).days)
     if age_days > policy.maximum_source_age_days:
         return "source_too_old"
+    if source_provenance_digest(source) != evidence.source_provenance_digest:
+        return "source_provenance_changed"
     return None

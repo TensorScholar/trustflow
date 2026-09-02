@@ -6,7 +6,7 @@ import math
 import re
 from datetime import datetime
 
-from trustflow.domain.evidence import source_content_digest
+from trustflow.domain.evidence import source_content_digest, source_provenance_digest
 from trustflow.domain.models import Evidence, PolicySettings, SourceDocument
 
 _TOKEN = re.compile(r"[a-z0-9][a-z0-9_./-]+", re.IGNORECASE)
@@ -112,6 +112,7 @@ def retrieve(
             source_uri=source.source_uri,
             source_version=source.version,
             source_digest=source_content_digest(source.content),
+            source_provenance_digest=source_provenance_digest(source),
             owner=source.owner,
             excerpt=excerpt,
             score=round(score, 4),
