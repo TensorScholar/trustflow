@@ -1,17 +1,28 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from trustflow.domain.models import (
     AuditEvent,
     DraftAnswer,
+    ExportRecoveryStatus,
     ExportResult,
     Questionnaire,
     ReviewDecision,
     SourceDocument,
 )
+
+
+@dataclass(frozen=True)
+class PreparedExport:
+    operation_id: str
+    staging_path: Path
+    output_path: Path
+    artifact_digest: str
+    result: ExportResult
 
 
 class StoreTransaction(Protocol):
@@ -27,6 +38,7 @@ class StoreTransaction(Protocol):
         entity_id: str,
         payload: dict[str, object],
     ) -> AuditEvent: ...
+    def has_audit_event(self, event_type: str, entity_id: str) -> bool: ...
 
 
 class Store(Protocol):
@@ -61,6 +73,30 @@ class QuestionnaireExporter(Protocol):
         reviews: dict[str, ReviewDecision],
         output: Path,
     ) -> ExportResult: ...
+
+    def prepare(
+        self,
+        questionnaire: Questionnaire,
+        answers: list[DraftAnswer],
+        reviews: dict[str, ReviewDecision],
+        output: Path,
+        operation_id: str,
+    ) -> PreparedExport: ...
+
+    def commit_prepared(self, prepared: PreparedExport) -> ExportResult: ...
+    def discard_prepared(self, prepared: PreparedExport) -> None: ...
+    def inspect_recovery(
+        self,
+        staging_path: Path,
+        output_path: Path,
+        expected_digest: str,
+    ) -> ExportRecoveryStatus: ...
+    def recover_prepared(
+        self,
+        staging_path: Path,
+        output_path: Path,
+        expected_digest: str,
+    ) -> ExportRecoveryStatus: ...
 
 
 class AnswerGenerator(Protocol):
