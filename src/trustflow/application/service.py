@@ -56,11 +56,19 @@ class TrustFlowService:
         self.store.append_audit_event(event_type, entity_id, payload)
 
     def ingest_source(self, source: SourceDocument) -> None:
+        previous = self.store.get_source(source.id)
         self.store.put_source(source)
+        impact_count = len(self.impact_scan(source.id)) if previous is not None else 0
         self._audit(
             "source.ingested",
             source.id,
-            {"version": source.version, "approved": source.approved, "owner": source.owner},
+            {
+                "version": source.version,
+                "approved": source.approved,
+                "owner": source.owner,
+                "replaced": previous is not None,
+                "impact_count": impact_count,
+            },
         )
 
     def import_questionnaire(self, path: str | Path) -> Questionnaire:
@@ -260,12 +268,15 @@ class TrustFlowService:
         )
         return result
 
-    def impact_scan(self) -> list[ImpactFinding]:
+    def impact_scan(self, source_id: str | None = None) -> list[ImpactFinding]:
         findings: list[ImpactFinding] = []
         current = {source.id: source for source in self.store.list_sources()}
         current_time = datetime.now(UTC)
         for answer in self.store.list_answers():
+            review = self.store.get_review_for_answer(answer.id)
             for evidence in answer.evidence:
+                if source_id is not None and evidence.source_id != source_id:
+                    continue
                 source = current.get(evidence.source_id)
                 reason: str | None
                 if source is None:
@@ -282,15 +293,27 @@ class TrustFlowService:
                 if reason is not None:
                     findings.append(
                         ImpactFinding(
+                            questionnaire_id=answer.questionnaire_id,
                             answer_id=answer.id,
                             question_id=answer.question_id,
                             source_id=evidence.source_id,
                             previous_version=evidence.source_version,
                             current_version=current_version,
                             reason=reason,
+                            review_id=review.id if review is not None else None,
+                            review_state=review.state if review is not None else None,
                         )
                     )
-        return findings
+        return sorted(
+            findings,
+            key=lambda item: (
+                item.questionnaire_id,
+                item.question_id,
+                item.answer_id,
+                item.source_id,
+                item.reason,
+            ),
+        )
 
     def metrics(self, questionnaire_id: str) -> dict[str, float | int]:
         if self.store.get_questionnaire(questionnaire_id) is None:
