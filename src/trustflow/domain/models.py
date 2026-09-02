@@ -58,6 +58,25 @@ class ReviewState(StrEnum):
     EDITED = "edited"
 
 
+class EvaluationScenario(StrEnum):
+    SUPPORTED = "supported"
+    STALE = "stale"
+    CONFLICTING = "conflicting"
+    PARTIALLY_SUPPORTED = "partially_supported"
+    OVERBROAD_CLAIM = "overbroad_claim"
+    WRONG_PRODUCT_SCOPE = "wrong_product_scope"
+    WRONG_REGION = "wrong_region"
+    WRONG_DEPLOYMENT_MODEL = "wrong_deployment_model"
+    NO_EVIDENCE = "no_evidence"
+    HUMAN_EDIT_REQUIRED = "human_edit_required"
+    SENSITIVE_CLAIM = "sensitive_claim"
+    EVIDENCE_REVOKED = "evidence_revoked"
+    SOURCE_VERSION_CHANGED = "source_version_changed"
+    QUESTION_AMBIGUOUS = "question_ambiguous"
+    DUPLICATE_QUESTION = "duplicate_question"
+    CONTRADICTORY_QUESTION = "contradictory_question"
+
+
 class SourceDocument(StrictModel):
     id: NonEmptyText
     title: NonEmptyText
@@ -192,15 +211,26 @@ class AuditEvent(StrictModel):
 
 
 class EvaluationCase(StrictModel):
-    id: str
+    id: NonEmptyText
+    scenario: EvaluationScenario = EvaluationScenario.SUPPORTED
     question: Question
     expected_status: AnswerStatus
     expected_source_ids: frozenset[str] = frozenset()
+    forbidden_source_ids: frozenset[str] = frozenset()
+    candidate_source_ids: frozenset[str] | None = None
+    allow_auto_answer: bool = False
+    evaluated_at: AwareDatetime | None = None
 
 
 class EvaluationSummary(StrictModel):
     cases: int
     status_accuracy: float
     citation_recall: float
+    citation_precision: float
+    false_acceptance_rate: float
+    auto_answer_precision: float
+    forbidden_citation_rate: float
     unsupported_answer_rate: float
     sensitive_auto_approval_rate: float
+    failed_case_ids: tuple[str, ...] = ()
+    scenario_failures: dict[str, int] = Field(default_factory=dict)
