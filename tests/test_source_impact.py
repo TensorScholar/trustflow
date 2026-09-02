@@ -9,6 +9,7 @@ from trustflow.domain.evidence import (
     source_provenance_digest,
 )
 from trustflow.domain.models import (
+    AnswerStatus,
     Evidence,
     PolicySettings,
     ReviewState,
@@ -117,6 +118,46 @@ def test_legacy_snapshot_without_provenance_digest_fails_closed() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_title", "Forged source title"),
+        ("source_uri", "policy://forged"),
+        ("owner", "forged-owner"),
+        ("updated_at", datetime(2026, 1, 2, tzinfo=UTC)),
+        ("valid_until", datetime(2027, 1, 1, tzinfo=UTC)),
+        ("excerpt", "Fabricated evidence excerpt."),
+    ],
+)
+def test_corrupted_evidence_metadata_fails_closed(field: str, value: object) -> None:
+    source = _source()
+    evidence = _snapshot(source).model_copy(update={field: value})
+    assert (
+        evidence_invalidation_reason(
+            source,
+            evidence,
+            PolicySettings(maximum_source_age_days=1000),
+            now=datetime(2026, 1, 3, tzinfo=UTC),
+        )
+        == "evidence_snapshot_changed"
+    )
+
+
+def test_equivalent_evidence_timestamp_offset_is_not_snapshot_drift() -> None:
+    source = _source()
+    same_instant = source.updated_at.astimezone(timezone(timedelta(hours=3, minutes=30)))
+    evidence = _snapshot(source).model_copy(update={"updated_at": same_instant})
+    assert (
+        evidence_invalidation_reason(
+            source,
+            evidence,
+            PolicySettings(maximum_source_age_days=1000),
+            now=datetime(2026, 1, 3, tzinfo=UTC),
+        )
+        is None
+    )
+
+
 def test_source_update_reports_reviewed_impact_and_blocks_export(service, tmp_path) -> None:
     questionnaire_path = tmp_path / "questionnaire.json"
     questionnaire_path.write_text(
@@ -152,6 +193,36 @@ def test_source_update_reports_reviewed_impact_and_blocks_export(service, tmp_pa
     assert source_event.payload["impact_count"] == 1
 
     with pytest.raises(InvalidTransitionError, match="source_provenance_changed"):
+        service.export(questionnaire.id, tmp_path / "blocked.json")
+
+
+def test_tampered_auto_answer_evidence_metadata_blocks_export(service, tmp_path) -> None:
+    service.ingest_source(
+        SourceDocument(
+            id="company",
+            title="Company profile",
+            owner="trust",
+            version="1",
+            content="The company is headquartered in Amsterdam.",
+            source_uri="policy://company",
+            updated_at=datetime.now(UTC),
+            tags=frozenset({"company", "headquartered", "amsterdam"}),
+        )
+    )
+    questionnaire_path = tmp_path / "company-questionnaire.json"
+    questionnaire_path.write_text(
+        json.dumps({"questions": ["Where is the company headquartered?"]}),
+        encoding="utf-8",
+    )
+    questionnaire = service.import_questionnaire(questionnaire_path)
+    answer = service.draft(questionnaire.id)[0]
+    assert answer.status is AnswerStatus.ANSWERED
+    assert answer.evidence
+
+    forged = answer.evidence[0].model_copy(update={"source_uri": "policy://forged"})
+    service.store.put_answer(answer.model_copy(update={"evidence": (forged, *answer.evidence[1:])}))
+
+    with pytest.raises(InvalidTransitionError, match="evidence_snapshot_changed"):
         service.export(questionnaire.id, tmp_path / "blocked.json")
 
 
