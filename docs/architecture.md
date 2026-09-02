@@ -39,15 +39,17 @@ Returns stable question IDs plus explicit source locations. Parsers must treat d
 
 ### Exporter
 
-Writes final answer text only after application policy allows export. Export adapters repeat critical validation as defense in depth, neutralize formula-like spreadsheet output, reject unsafe source/destination relationships and commit completed output atomically without overwriting an existing destination.
+Writes final answer text only after application policy allows export. Export adapters repeat critical validation as defense in depth, neutralize formula-like spreadsheet output, reject unsafe source/destination relationships and commit completed output with an atomic create-if-absent operation.
 
 ### Store
 
-Persistence is exposed through ports. SQLite is the durable single-node implementation; an in-memory store supports deterministic tests and demos.
+Persistence is exposed through ports. Governed state mutations and their audit events share an explicit transaction / unit-of-work boundary: either both commit or neither commits. The application-facing `Store` port exposes governed write primitives only through that transaction boundary, making accidental non-transactional writes a type-checking failure. Concrete adapters may retain lower-level primitives for migrations and direct adapter tests.
+
+SQLite implements the unit of work with one database transaction; the in-memory adapter provides rollback-equivalent semantics for deterministic tests and demos. SQLite is the durable single-node implementation. The store transaction does not pretend to provide a distributed transaction across SQLite and exported filesystem artifacts; that external-resource boundary is documented separately as a release limitation.
 
 ### External evidence source
 
-The first external evidence adapter is intentionally concrete rather than a generic connector abstraction. `GitHubEvidenceSource` resolves one explicit GitHub ref to an immutable commit, fetches one explicit UTF-8 file at that commit, and returns a `SourceDocument`. The CLI then submits that ordinary domain object through the existing `TrustFlowService.ingest_source` path.
+The first external evidence adapter is intentionally concrete rather than a generic connector abstraction. `GitHubEvidenceSource` resolves one explicit GitHub ref to an immutable repository commit, fetches one explicit UTF-8 file at that commit, derives file-level revision/freshness from the latest commit that touched that exact path, and returns a `SourceDocument`. The CLI then submits that ordinary domain object through the existing `TrustFlowService.ingest_source` path.
 
 The adapter has no authority to approve claims, search repositories, write GitHub state, bypass source approval, or bypass evidence/review/export policy. Its HTTP dependency is isolated behind the optional `github` package extra.
 
