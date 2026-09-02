@@ -10,12 +10,13 @@ from trustflow.adapters.parsers import ParserRegistry
 from trustflow.domain.models import AnswerStatus, DraftAnswer, Evidence
 
 
-def evidence() -> Evidence:
+def evidence(*, source_digest: str = "a" * 64) -> Evidence:
     return Evidence(
         source_id="source",
         source_title="Source",
         source_uri="policy://source",
         source_version="1",
+        source_digest=source_digest,
         owner="owner",
         excerpt="Approved evidence.",
         score=1,
@@ -139,7 +140,7 @@ def test_json_export(tmp_path) -> None:
     )
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload[0]["answer"] == "Answer"
-    assert payload[0]["sources"][0]["digest"] == "0" * 64
+    assert payload[0]["sources"][0]["digest"] == "a" * 64
 
 
 def test_formula_neutralization_with_leading_whitespace(tmp_path) -> None:
@@ -240,6 +241,31 @@ def test_exporter_defense_in_depth_blocks_claim_without_evidence(tmp_path) -> No
         ExporterRegistry().export(
             questionnaire,
             [unsupported],
+            {},
+            tmp_path / "out.json",
+        )
+
+
+def test_exporter_blocks_evidence_without_source_fingerprint(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import InvalidTransitionError
+
+    source = tmp_path / "q.json"
+    source.write_text('{"questions":["Question?"]}', encoding="utf-8")
+    questionnaire = ParserRegistry().parse(source)
+    legacy = DraftAnswer(
+        questionnaire_id=questionnaire.id,
+        question_id="q1",
+        text="Legacy claim",
+        status=AnswerStatus.ANSWERED,
+        confidence=1,
+        evidence=(evidence(source_digest="0" * 64),),
+    )
+    with pytest.raises(InvalidTransitionError, match="missing a source fingerprint"):
+        ExporterRegistry().export(
+            questionnaire,
+            [legacy],
             {},
             tmp_path / "out.json",
         )
