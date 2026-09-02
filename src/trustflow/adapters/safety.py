@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -22,6 +23,15 @@ def detect_format(path: Path) -> DocumentFormat:
     if suffix not in _ALLOWED:
         raise UnsafeDocumentError(f"unsupported file extension: {path.suffix}")
     return DocumentFormat(suffix)
+
+
+def file_sha256(path: Path) -> str:
+    """Return a stable SHA-256 fingerprint of the exact questionnaire bytes."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _inspect_office_archive(path: Path, fmt: DocumentFormat, policy: PolicySettings) -> None:

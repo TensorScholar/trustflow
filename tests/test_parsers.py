@@ -14,6 +14,8 @@ def test_json_parser(tmp_path) -> None:
     questionnaire = ParserRegistry().parse(path)
     assert questionnaire.format is DocumentFormat.JSON
     assert questionnaire.questions[0].sensitivity is QuestionSensitivity.SECURITY
+    assert questionnaire.source_digest != "0" * 64
+    assert len(questionnaire.source_digest) == 64
 
 
 def test_markdown_parser(tmp_path) -> None:
@@ -38,6 +40,58 @@ def test_xlsx_parser(tmp_path) -> None:
     workbook.save(path)
     questionnaire = ParserRegistry().parse(path)
     assert questionnaire.questions[0].location.cell == "A1"
+
+
+def test_xlsx_parser_rejects_question_on_hidden_sheet(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import InvalidQuestionnaireError
+
+    path = tmp_path / "hidden-sheet.xlsx"
+    workbook = Workbook()
+    workbook.active["A1"] = "Visible content"
+    hidden = workbook.create_sheet("Hidden")
+    hidden["A1"] = "Secret question?"
+    hidden.sheet_state = "hidden"
+    workbook.save(path)
+    workbook.close()
+
+    with pytest.raises(InvalidQuestionnaireError, match="hidden XLSX sheet"):
+        ParserRegistry().parse(path)
+
+
+def test_xlsx_parser_rejects_question_on_hidden_row(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import InvalidQuestionnaireError
+
+    path = tmp_path / "hidden-row.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet["A2"] = "Hidden question?"
+    sheet.row_dimensions[2].hidden = True
+    workbook.save(path)
+    workbook.close()
+
+    with pytest.raises(InvalidQuestionnaireError, match="hidden XLSX row"):
+        ParserRegistry().parse(path)
+
+
+def test_xlsx_parser_rejects_question_in_hidden_column(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import InvalidQuestionnaireError
+
+    path = tmp_path / "hidden-column.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet["B1"] = "Hidden question?"
+    sheet.column_dimensions["B"].hidden = True
+    workbook.save(path)
+    workbook.close()
+
+    with pytest.raises(InvalidQuestionnaireError, match="hidden XLSX column"):
+        ParserRegistry().parse(path)
 
 
 def test_docx_parser(tmp_path) -> None:

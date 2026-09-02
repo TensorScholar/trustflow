@@ -16,9 +16,10 @@ from docx import Document
 from docx.document import Document as DocumentObject
 from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
+from openpyxl.cell.cell import Cell
 from openpyxl.worksheet.worksheet import Worksheet
 
-from trustflow.adapters.safety import neutralize_spreadsheet_formula
+from trustflow.adapters.safety import file_sha256, neutralize_spreadsheet_formula
 from trustflow.domain.errors import (
     InvalidTransitionError,
     UnsafeExportError,
@@ -35,6 +36,7 @@ from trustflow.domain.models import (
 )
 
 _MISSING_DIGEST = "0" * 64
+_MAX_XLSX_COLUMN = 16_384
 
 
 def _final_text(answer: DraftAnswer, review: ReviewDecision | None) -> str:
@@ -73,6 +75,13 @@ def _answer_mapping(
     return mapping
 
 
+def _verify_source_identity(questionnaire: Questionnaire, source: Path) -> None:
+    if questionnaire.source_digest == _MISSING_DIGEST:
+        raise UnsafeExportError("questionnaire source fingerprint is missing")
+    if file_sha256(source) != questionnaire.source_digest:
+        raise UnsafeExportError("questionnaire source changed since import")
+
+
 def _source_and_destination(questionnaire: Questionnaire, output: Path) -> tuple[Path, Path]:
     try:
         source = Path(questionnaire.source_path).resolve(strict=True)
@@ -81,8 +90,11 @@ def _source_and_destination(questionnaire: Questionnaire, output: Path) -> tuple
     destination = output.expanduser().resolve(strict=False)
     if source == destination:
         raise UnsafeExportError("export destination must differ from the source document")
-    if destination.exists() and destination.is_dir():
-        raise UnsafeExportError("export destination is a directory")
+    if destination.exists():
+        if destination.is_dir():
+            raise UnsafeExportError("export destination is a directory")
+        raise UnsafeExportError("export destination already exists")
+    _verify_source_identity(questionnaire, source)
     destination.parent.mkdir(parents=True, exist_ok=True)
     return source, destination
 
@@ -98,7 +110,15 @@ def _atomic_destination(destination: Path) -> Iterator[Path]:
     temporary = Path(raw_path)
     try:
         yield temporary
-        os.replace(temporary, destination)
+        try:
+            # A same-directory hard link is an atomic create-if-absent commit. Unlike
+            # os.replace(), it cannot overwrite a destination created concurrently.
+            os.link(temporary, destination)
+        except FileExistsError as exc:
+            raise UnsafeExportError("export destination was created concurrently") from exc
+        except OSError as exc:
+            raise UnsafeExportError("atomic no-overwrite export commit failed") from exc
+        temporary.unlink()
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -143,6 +163,31 @@ def _docx_paragraph(document: DocumentObject, key: str) -> Paragraph:
     raise UnsafeExportError(f"DOCX location does not identify a paragraph: {key}")
 
 
+def _xlsx_target(sheet: Worksheet, question_cell: str) -> Cell:
+    cell = sheet[question_cell]
+    if not isinstance(cell, Cell):
+        raise UnsafeExportError("XLSX question location is not a writable cell")
+    merged_question = next(
+        (merged for merged in sheet.merged_cells.ranges if cell.coordinate in merged),
+        None,
+    )
+    target_column = merged_question.max_col + 1 if merged_question is not None else cell.column + 1
+    if target_column > _MAX_XLSX_COLUMN:
+        raise UnsafeExportError("XLSX question has no writable adjacent answer column")
+    target = sheet.cell(row=cell.row, column=target_column)
+    if any(target.coordinate in merged for merged in sheet.merged_cells.ranges):
+        raise UnsafeExportError(
+            f"XLSX answer target is part of a merged range: {sheet.title}!{target.coordinate}"
+        )
+    if not isinstance(target, Cell):
+        raise UnsafeExportError("XLSX answer target is not a writable cell")
+    if target.value not in (None, ""):
+        raise UnsafeExportError(
+            f"XLSX answer target is occupied: {sheet.title}!{target.coordinate}"
+        )
+    return target
+
+
 class ExporterRegistry:
     def export(
         self,
@@ -164,7 +209,7 @@ class ExporterRegistry:
             DocumentFormat.MARKDOWN,
             DocumentFormat.PDF,
         }:
-            self._json(questionnaire, mapping, reviews, destination)
+            self._json(questionnaire, mapping, reviews, source, destination)
         else:
             raise UnsupportedFormatError(questionnaire.format.value)
         return ExportResult(
@@ -191,22 +236,33 @@ class ExporterRegistry:
     ) -> None:
         with _atomic_destination(destination) as temporary:
             shutil.copyfile(source, temporary)
+            _verify_source_identity(questionnaire, temporary)
             workbook = load_workbook(temporary, keep_links=False)
             try:
                 for question in questionnaire.questions:
                     answer = answers[question.id]
                     sheet_name = question.location.sheet
-                    sheet = workbook.active if sheet_name is None else workbook[sheet_name]
+                    cell_name = question.location.cell
+                    if not sheet_name or not cell_name:
+                        raise UnsafeExportError("XLSX question has no exact writable location")
+                    try:
+                        sheet = workbook[sheet_name]
+                    except KeyError as exc:
+                        raise UnsafeExportError(
+                            f"XLSX sheet location no longer exists: {sheet_name}"
+                        ) from exc
                     if not isinstance(sheet, Worksheet):
                         raise UnsafeExportError("XLSX target is not a worksheet")
-                    cell = sheet[question.location.cell or "A1"]
-                    target = sheet.cell(row=cell.row, column=cell.column + 1)
+                    if sheet.sheet_state != "visible":
+                        raise UnsafeExportError("XLSX question sheet is hidden")
+                    target = _xlsx_target(sheet, cell_name)
                     target.value = neutralize_spreadsheet_formula(
                         _final_text(answer, reviews.get(answer.id))
                     )
                 workbook.save(temporary)
             finally:
                 workbook.close()
+            _verify_source_identity(questionnaire, source)
 
     def _docx(
         self,
@@ -232,6 +288,7 @@ class ExporterRegistry:
             paragraph.add_run(f"\nAnswer: {text}")
         with _atomic_destination(destination) as temporary:
             document.save(str(temporary))
+            _verify_source_identity(questionnaire, source)
 
     def _csv(
         self,
@@ -246,9 +303,19 @@ class ExporterRegistry:
         for question in questionnaire.questions:
             answer = answers[question.id]
             row = (question.location.row or 1) - 1
-            column = int(question.location.key or "0") + 1
+            try:
+                question_column = int(question.location.key or "0")
+            except ValueError as exc:
+                raise UnsafeExportError("CSV question column is invalid") from exc
+            if question_column < 0:
+                raise UnsafeExportError("CSV question column is invalid")
+            column = question_column + 1
             if row < 0 or row >= len(rows):
                 raise UnsafeExportError("CSV question row no longer exists")
+            if len(rows[row]) > column and rows[row][column] != "":
+                raise UnsafeExportError(
+                    f"CSV answer target is occupied at row {row + 1}, column {column + 1}"
+                )
             while len(rows[row]) <= column:
                 rows[row].append("")
             rows[row][column] = neutralize_spreadsheet_formula(
@@ -259,12 +326,16 @@ class ExporterRegistry:
             temporary.open("w", newline="", encoding="utf-8") as handle,
         ):
             csv.writer(handle).writerows(rows)
+            handle.flush()
+            os.fsync(handle.fileno())
+            _verify_source_identity(questionnaire, source)
 
     def _json(
         self,
         questionnaire: Questionnaire,
         answers: dict[str, DraftAnswer],
         reviews: dict[str, ReviewDecision],
+        source: Path,
         destination: Path,
     ) -> None:
         payload = []
@@ -294,3 +365,4 @@ class ExporterRegistry:
                 json.dumps(payload, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
+            _verify_source_identity(questionnaire, source)

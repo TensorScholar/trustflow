@@ -93,6 +93,7 @@ class Questionnaire(StrictModel):
     id: str = Field(default_factory=lambda: f"qnr_{uuid4().hex}")
     title: NonEmptyText
     source_path: NonEmptyText
+    source_digest: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     format: DocumentFormat
     questions: tuple[Question, ...]
     imported_at: AwareDatetime = Field(default_factory=utc_now)
