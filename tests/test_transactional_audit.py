@@ -137,15 +137,17 @@ def test_review_rolls_back_when_audit_append_fails(tmp_path) -> None:
 def test_sqlite_transaction_rolls_back_state_and_audit_together(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "rollback.db")
 
-    with pytest.raises(RuntimeError, match="abort unit of work"):
-        with store.transaction() as transaction:
-            transaction.put_source(_source())
-            transaction.append_audit_event(
-                "source.ingested",
-                "security",
-                {"version": "1"},
-            )
-            raise RuntimeError("abort unit of work")
+    with (
+        pytest.raises(RuntimeError, match="abort unit of work"),
+        store.transaction() as transaction,
+    ):
+        transaction.put_source(_source())
+        transaction.append_audit_event(
+            "source.ingested",
+            "security",
+            {"version": "1"},
+        )
+        raise RuntimeError("abort unit of work")
 
     assert store.get_source("security") is None
     assert store.list_audit() == []
