@@ -39,7 +39,7 @@ class MemoryStore:
             )
             try:
                 yield self
-            except Exception:
+            except BaseException:
                 (
                     self.sources,
                     self.questionnaires,
