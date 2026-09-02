@@ -115,17 +115,23 @@ class ParserRegistry:
                         value = cell.value
                         if not (isinstance(value, str) and value.strip().endswith("?")):
                             continue
+                        row_index = cell.row
+                        column_index = cell.column
+                        if row_index is None or column_index is None:
+                            raise InvalidQuestionnaireError(
+                                "XLSX question cell has no concrete coordinate"
+                            )
                         if sheet.sheet_state != "visible":
                             raise InvalidQuestionnaireError(
                                 f"question detected on hidden XLSX sheet: {sheet.title}"
                             )
-                        row_dimension = sheet.row_dimensions.get(cell.row)
+                        row_dimension = sheet.row_dimensions.get(row_index)
                         if row_dimension is not None and row_dimension.hidden:
                             raise InvalidQuestionnaireError(
                                 "question detected on hidden XLSX row: "
                                 f"{sheet.title}!{cell.coordinate}"
                             )
-                        if _xlsx_column_hidden(sheet, cell.column):
+                        if _xlsx_column_hidden(sheet, column_index):
                             raise InvalidQuestionnaireError(
                                 f"question detected in hidden XLSX column: "
                                 f"{sheet.title}!{cell.coordinate}"
