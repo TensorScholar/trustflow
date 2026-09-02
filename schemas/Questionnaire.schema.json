@@ -153,6 +153,12 @@
       "title": "Questions",
       "type": "array"
     },
+    "source_digest": {
+      "default": "0000000000000000000000000000000000000000000000000000000000000000",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Digest",
+      "type": "string"
+    },
     "source_path": {
       "minLength": 1,
       "title": "Source Path",

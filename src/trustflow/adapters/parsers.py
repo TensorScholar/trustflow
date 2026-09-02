@@ -11,9 +11,10 @@ from uuid import uuid4
 from docx import Document
 from docx.table import Table
 from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from pypdf import PdfReader
 
-from trustflow.adapters.safety import inspect_document
+from trustflow.adapters.safety import file_sha256, inspect_document
 from trustflow.domain.classification import classify_sensitivity
 from trustflow.domain.errors import InvalidQuestionnaireError, UnsupportedFormatError
 from trustflow.domain.models import (
@@ -56,12 +57,24 @@ def _iter_docx_table_paragraphs(
                 )
 
 
+def _xlsx_column_hidden(sheet: Worksheet, column: int) -> bool:
+    for dimension in sheet.column_dimensions.values():
+        if not dimension.hidden:
+            continue
+        minimum = dimension.min or 0
+        maximum = dimension.max or minimum
+        if minimum <= column <= maximum:
+            return True
+    return False
+
+
 class ParserRegistry:
     def __init__(self, policy: PolicySettings | None = None) -> None:
         self.policy = policy or PolicySettings()
 
     def parse(self, path: Path) -> Questionnaire:
         fmt = inspect_document(path, self.policy)
+        source_digest = file_sha256(path)
         if fmt is DocumentFormat.XLSX:
             questions = self._xlsx(path)
         elif fmt is DocumentFormat.DOCX:
@@ -76,6 +89,8 @@ class ParserRegistry:
             questions = self._pdf(path)
         else:
             raise UnsupportedFormatError(fmt.value)
+        if file_sha256(path) != source_digest:
+            raise InvalidQuestionnaireError("questionnaire changed during import")
         if not questions:
             raise InvalidQuestionnaireError("questionnaire contains no detectable questions")
         if len(questions) > self.policy.maximum_questions:
@@ -84,12 +99,13 @@ class ParserRegistry:
             id=f"qnr_{uuid4().hex}",
             title=path.stem,
             source_path=str(path.resolve()),
+            source_digest=source_digest,
             format=fmt,
             questions=tuple(questions),
         )
 
     def _xlsx(self, path: Path) -> list[Question]:
-        workbook = load_workbook(path, read_only=True, data_only=False, keep_links=False)
+        workbook = load_workbook(path, read_only=False, data_only=False, keep_links=False)
         try:
             questions: list[Question] = []
             index = 1
@@ -97,19 +113,34 @@ class ParserRegistry:
                 for row in sheet.iter_rows():
                     for cell in row:
                         value = cell.value
-                        if isinstance(value, str) and value.strip().endswith("?"):
-                            questions.append(
-                                _question(
-                                    f"q{index}",
-                                    value,
-                                    QuestionLocation(
-                                        format=DocumentFormat.XLSX,
-                                        sheet=sheet.title,
-                                        cell=cell.coordinate,
-                                    ),
-                                )
+                        if not (isinstance(value, str) and value.strip().endswith("?")):
+                            continue
+                        if sheet.sheet_state != "visible":
+                            raise InvalidQuestionnaireError(
+                                f"question detected on hidden XLSX sheet: {sheet.title}"
                             )
-                            index += 1
+                        row_dimension = sheet.row_dimensions.get(cell.row)
+                        if row_dimension is not None and row_dimension.hidden:
+                            raise InvalidQuestionnaireError(
+                                f"question detected on hidden XLSX row: {sheet.title}!{cell.coordinate}"
+                            )
+                        if _xlsx_column_hidden(sheet, cell.column):
+                            raise InvalidQuestionnaireError(
+                                f"question detected in hidden XLSX column: "
+                                f"{sheet.title}!{cell.coordinate}"
+                            )
+                        questions.append(
+                            _question(
+                                f"q{index}",
+                                value,
+                                QuestionLocation(
+                                    format=DocumentFormat.XLSX,
+                                    sheet=sheet.title,
+                                    cell=cell.coordinate,
+                                ),
+                            )
+                        )
+                        index += 1
             return questions
         finally:
             workbook.close()
