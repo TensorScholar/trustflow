@@ -116,7 +116,7 @@ def test_review_replay_is_blocked_after_answer_state_changes(service, tmp_path) 
         state=ReviewState.APPROVED,
         final_text=answer.text,
     )
-    service.store.put_answer(answer.model_copy(update={"reasons": answer.reasons + ("mutated",)}))
+    service.store.put_answer(answer.model_copy(update={"reasons": (*answer.reasons, "mutated")}))
 
     with pytest.raises(InvalidTransitionError, match="review_state_changed"):
         service.export(questionnaire.id, tmp_path / "blocked.json")
