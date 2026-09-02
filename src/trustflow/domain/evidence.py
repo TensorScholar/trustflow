@@ -18,8 +18,10 @@ def source_content_digest(content: str) -> str:
 
 def source_provenance_digest(source: SourceDocument) -> str:
     """Fingerprint governance metadata whose drift must invalidate an evidence snapshot."""
+    metadata = source.model_dump(mode="json", exclude={"content", "tags"})
+    metadata["tags"] = sorted(source.tags)
     payload = json.dumps(
-        source.model_dump(mode="json", exclude={"content"}),
+        metadata,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
