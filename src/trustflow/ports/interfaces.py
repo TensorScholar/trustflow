@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Protocol
 
@@ -13,7 +14,23 @@ from trustflow.domain.models import (
 )
 
 
+class StoreTransaction(Protocol):
+    """Atomic persistence boundary for governed state mutations and their audit events."""
+
+    def put_source(self, source: SourceDocument) -> None: ...
+    def put_questionnaire(self, questionnaire: Questionnaire) -> None: ...
+    def put_answer(self, answer: DraftAnswer) -> None: ...
+    def put_review(self, review: ReviewDecision) -> None: ...
+    def append_audit_event(
+        self,
+        event_type: str,
+        entity_id: str,
+        payload: dict[str, object],
+    ) -> AuditEvent: ...
+
+
 class Store(Protocol):
+    def transaction(self) -> AbstractContextManager[StoreTransaction]: ...
     def put_source(self, source: SourceDocument) -> None: ...
     def get_source(self, source_id: str) -> SourceDocument | None: ...
     def list_sources(self) -> list[SourceDocument]: ...
