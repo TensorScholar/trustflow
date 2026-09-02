@@ -41,9 +41,9 @@ Writes final answer text only after application policy allows export. Export ada
 
 ### Store
 
-Persistence is exposed through ports. Governed state mutations and their audit events share an explicit transaction / unit-of-work boundary: either both commit or neither commits. SQLite implements this with one database transaction; the in-memory adapter provides rollback-equivalent semantics for deterministic tests and demos.
+Persistence is exposed through ports. Governed state mutations and their audit events share an explicit transaction / unit-of-work boundary: either both commit or neither commits. The application-facing `Store` port exposes governed write primitives only through that transaction boundary, making accidental non-transactional writes a type-checking failure. Concrete adapters may retain lower-level primitives for migrations and direct adapter tests.
 
-SQLite is the durable single-node implementation. The store transaction does not pretend to provide a distributed transaction across SQLite and exported filesystem artifacts; that external-resource boundary is documented separately as a release limitation.
+SQLite implements the unit of work with one database transaction; the in-memory adapter provides rollback-equivalent semantics for deterministic tests and demos. SQLite is the durable single-node implementation. The store transaction does not pretend to provide a distributed transaction across SQLite and exported filesystem artifacts; that external-resource boundary is documented separately as a release limitation.
 
 ### Optional web adapter
 
