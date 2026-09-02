@@ -55,20 +55,28 @@ def run_demo(directory: str | Path | None = None) -> dict[str, object]:
             tags=frozenset({"legal", "indemnity", "contract"}),
         )
     )
+    service.ingest_source(
+        SourceDocument(
+            id="src_company",
+            title="Company profile",
+            owner="trust",
+            version="2026.1",
+            content="Our favorite color is blue.",
+            source_uri="policy://company/profile",
+            updated_at=datetime.now(UTC),
+            tags=frozenset({"company", "profile"}),
+        )
+    )
     questionnaire = service.import_questionnaire(questionnaire_path)
     answers = service.draft(questionnaire.id)
     for answer in answers:
         if answer.status is AnswerStatus.ANSWERED:
             continue
-        if answer.status is AnswerStatus.UNANSWERABLE:
-            final_text = "Not applicable to this demonstration."
-        else:
-            final_text = answer.text
         service.review(
             answer.id,
             reviewer="demo-reviewer",
             state=ReviewState.EDITED,
-            final_text=final_text,
+            final_text=answer.text,
             note="Deterministic demonstration review.",
         )
     output = root / "completed.json"
