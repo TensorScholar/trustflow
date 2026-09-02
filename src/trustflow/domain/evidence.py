@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 
 from trustflow.domain.models import Evidence, PolicySettings, SourceDocument
 
+_MISSING_DIGEST = "0" * 64
+
 
 def source_content_digest(content: str) -> str:
     """Return the stable SHA-256 identity of an evidence source body."""
@@ -22,6 +24,8 @@ def evidence_invalidation_reason(
 ) -> str | None:
     """Return the deterministic reason an evidence snapshot is no longer reusable."""
     current_time = now or datetime.now(UTC)
+    if evidence.source_digest == _MISSING_DIGEST:
+        return "source_snapshot_missing"
     if policy.require_approved_sources and not source.approved:
         return "source_revoked"
     if source.version != evidence.source_version:
