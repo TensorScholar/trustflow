@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import Lock
 
 from trustflow.domain.audit import make_event
+from trustflow.domain.errors import InvalidTransitionError
 from trustflow.domain.models import (
     AuditEvent,
     DraftAnswer,
@@ -18,6 +19,7 @@ class MemoryStore:
         self.questionnaires: dict[str, Questionnaire] = {}
         self.answers: dict[str, DraftAnswer] = {}
         self.reviews: dict[str, ReviewDecision] = {}
+        self._review_order: list[str] = []
         self.audit: list[AuditEvent] = []
         self._audit_lock = Lock()
 
@@ -49,10 +51,21 @@ class MemoryStore:
         return answers
 
     def put_review(self, review: ReviewDecision) -> None:
-        self.reviews[review.answer_id] = review
+        if review.id in self.reviews:
+            raise InvalidTransitionError(f"review decision already exists: {review.id}")
+        self.reviews[review.id] = review
+        self._review_order.append(review.id)
 
     def get_review_for_answer(self, answer_id: str) -> ReviewDecision | None:
-        return self.reviews.get(answer_id)
+        history = self.list_reviews_for_answer(answer_id)
+        return history[-1] if history else None
+
+    def list_reviews_for_answer(self, answer_id: str) -> list[ReviewDecision]:
+        return [
+            self.reviews[review_id]
+            for review_id in self._review_order
+            if self.reviews[review_id].answer_id == answer_id
+        ]
 
     def append_audit(self, event: AuditEvent) -> None:
         with self._audit_lock:
