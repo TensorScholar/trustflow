@@ -1,4 +1,5 @@
 import base64
+import hashlib
 
 import httpx
 import pytest
@@ -8,7 +9,11 @@ from trustflow.domain.models import SourceClassification
 
 RESOLVED_COMMIT_SHA = "a" * 40
 FILE_COMMIT_SHA = "b" * 40
-BLOB_SHA = "c" * 40
+
+
+def _blob_sha(content: bytes) -> str:
+    payload = f"blob {len(content)}\0".encode("ascii") + content
+    return hashlib.sha1(payload, usedforsecurity=False).hexdigest()
 
 
 def _transport(
@@ -18,6 +23,7 @@ def _transport(
     declared_size: int | None = None,
     encoding: str | None = "base64",
     encoded_content: str | None = None,
+    blob_sha: str | None = None,
     resolved_commit_sha: str = RESOLVED_COMMIT_SHA,
     file_commit_sha: str = FILE_COMMIT_SHA,
     file_history: bool = True,
@@ -49,7 +55,7 @@ def _transport(
         payload = {
             "type": content_type,
             "size": len(content) if declared_size is None else declared_size,
-            "sha": BLOB_SHA,
+            "sha": _blob_sha(content) if blob_sha is None else blob_sha,
             "encoding": encoding,
             "content": (
                 base64.b64encode(content).decode("ascii")
@@ -211,6 +217,11 @@ def test_github_source_rejects_declared_oversize_before_decode() -> None:
         _load(transport)
 
 
+def test_github_source_rejects_configured_limit_above_inline_api_boundary() -> None:
+    with pytest.raises(GitHubSourceError, match="1 MB GitHub inline-content limit"):
+        GitHubEvidenceSource(token="secret-token", maximum_file_bytes=1_000_001)
+
+
 @pytest.mark.parametrize(
     ("content", "declared_size", "encoded_content", "match"),
     [
@@ -232,6 +243,12 @@ def test_github_source_rejects_invalid_inline_content(
         encoded_content=encoded_content,
     )
     with pytest.raises(GitHubSourceError, match=match):
+        _load(transport)
+
+
+def test_github_source_rejects_blob_identity_mismatch() -> None:
+    transport, _ = _transport(blob_sha="c" * 40)
+    with pytest.raises(GitHubSourceError, match="Git blob identity"):
         _load(transport)
 
 
