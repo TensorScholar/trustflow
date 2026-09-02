@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from trustflow.domain.audit import verify_chain
-from trustflow.domain.evidence import evidence_invalidation_reason
 from trustflow.domain.errors import InvalidTransitionError, NotFoundError
+from trustflow.domain.evidence import evidence_invalidation_reason
 from trustflow.domain.models import (
     AnswerStatus,
     DraftAnswer,
