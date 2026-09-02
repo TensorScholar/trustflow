@@ -25,7 +25,7 @@ RFP and security-questionnaire workflows fail when generated answers cannot be t
 - mandatory review for sensitive, stale, conflicting or unsupported claims;
 - fail-closed export with source-file overwrite protection;
 - safe XLSX, DOCX, CSV, JSON, Markdown and text-extractable PDF handling;
-- source-change impact analysis for previously approved answers;
+- source-change impact analysis across answer/evidence snapshots, including latest review context;
 - hash-chained audit events and measurable workflow outcomes.
 
 No API key is required for the default workflow.
@@ -66,9 +66,9 @@ Macro-enabled or malformed Office containers are rejected before parser librarie
 
 ## Safety model
 
-Export is fail closed. Drafts marked `review_required`, `conflict`, or `stale` require an `approved` or `edited` human review. `unanswerable` drafts require an explicit human edit. Rejected reviews cannot be exported.
+Export is fail closed. Drafts marked `review_required`, `conflict`, or `stale` require an `approved` or `edited` human review. `unanswerable` drafts have no approved evidence and cannot be promoted to an external claim. Review decisions are bound to the exact draft/evidence snapshot they evaluated.
 
-TrustFlow also rejects attempts to overwrite the imported source questionnaire and uses atomic destination replacement for completed exports.
+TrustFlow also rejects attempts to overwrite the imported source questionnaire and commits completed exports with an atomic create-if-absent operation. Evidence reuse is blocked when either source content or source provenance metadata has drifted since retrieval.
 
 See the [security model](docs/security-model.md) and [limitations](docs/limitations.md) before exposing any adapter or API beyond a local evaluation environment.
 
@@ -92,7 +92,7 @@ See [architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-modular-mo
 
 ## Release boundary
 
-Included in `0.1.0rc2`: safe import and extraction, evidence registry and retrieval, deterministic drafting, review gates, conflict/staleness handling, safe export, source-version impact scanning, SQLite/in-memory storage, audit verification, metrics, CLI, optional API, tests and release automation.
+Included in `0.1.0rc2`: safe import and extraction, evidence registry and retrieval, deterministic drafting, review gates, conflict/staleness handling, safe export, source-content and source-provenance impact scanning, SQLite/in-memory storage, audit verification, metrics, CLI, optional API, tests and release automation.
 
 Not included: OCR, live enterprise connectors, browser extensions, autonomous legal approval, hosted multi-tenancy, authentication/authorization, production DLP/retention controls, or a production-readiness claim.
 
