@@ -189,10 +189,13 @@ def test_github_source_does_not_follow_redirects_or_echo_error_body() -> None:
             text="secret-token should never be echoed",
         )
 
-    with GitHubEvidenceSource(
-        token="secret-token",
-        transport=httpx.MockTransport(handler),
-    ) as connector, pytest.raises(GitHubSourceError, match="status 302") as exc_info:
+    with (
+        GitHubEvidenceSource(
+            token="secret-token",
+            transport=httpx.MockTransport(handler),
+        ) as connector,
+        pytest.raises(GitHubSourceError, match="status 302") as exc_info,
+    ):
         connector.load_file(
             repository="acme/security-policies",
             path="docs/security.md",
@@ -262,10 +265,13 @@ def test_github_source_rejects_invalid_api_shape() -> None:
         del request
         return httpx.Response(200, json={"sha": "not-a-sha", "commit": {}})
 
-    with GitHubEvidenceSource(
-        token="secret-token",
-        transport=httpx.MockTransport(handler),
-    ) as connector, pytest.raises(GitHubSourceError, match="invalid response shape"):
+    with (
+        GitHubEvidenceSource(
+            token="secret-token",
+            transport=httpx.MockTransport(handler),
+        ) as connector,
+        pytest.raises(GitHubSourceError, match="invalid response shape"),
+    ):
         connector.load_file(
             repository="acme/security-policies",
             path="docs/security.md",
@@ -280,12 +286,13 @@ def test_github_source_sanitizes_transport_errors() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("secret-token upstream diagnostic", request=request)
 
-    with GitHubEvidenceSource(
-        token="secret-token",
-        transport=httpx.MockTransport(handler),
-    ) as connector, pytest.raises(
-        GitHubSourceError, match="GitHub API request failed"
-    ) as exc_info:
+    with (
+        GitHubEvidenceSource(
+            token="secret-token",
+            transport=httpx.MockTransport(handler),
+        ) as connector,
+        pytest.raises(GitHubSourceError, match="GitHub API request failed") as exc_info,
+    ):
         connector.load_file(
             repository="acme/security-policies",
             path="docs/security.md",
