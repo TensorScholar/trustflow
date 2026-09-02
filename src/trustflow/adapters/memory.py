@@ -126,6 +126,13 @@ class MemoryStore:
             self.audit.append(event)
             return event
 
+    def has_audit_event(self, event_type: str, entity_id: str) -> bool:
+        with self._state_lock:
+            return any(
+                event.event_type == event_type and event.entity_id == entity_id
+                for event in self.audit
+            )
+
     def list_audit(self) -> list[AuditEvent]:
         with self._state_lock:
             return list(self.audit)
