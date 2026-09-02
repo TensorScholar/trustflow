@@ -16,6 +16,7 @@ from docx import Document
 from docx.document import Document as DocumentObject
 from docx.text.paragraph import Paragraph
 from openpyxl import load_workbook
+from openpyxl.cell.cell import Cell
 from openpyxl.worksheet.worksheet import Worksheet
 
 from trustflow.adapters.safety import file_sha256, neutralize_spreadsheet_formula
@@ -109,7 +110,15 @@ def _atomic_destination(destination: Path) -> Iterator[Path]:
     temporary = Path(raw_path)
     try:
         yield temporary
-        os.replace(temporary, destination)
+        try:
+            # A same-directory hard link is an atomic create-if-absent commit. Unlike
+            # os.replace(), it cannot overwrite a destination created concurrently.
+            os.link(temporary, destination)
+        except FileExistsError as exc:
+            raise UnsafeExportError("export destination was created concurrently") from exc
+        except OSError as exc:
+            raise UnsafeExportError("atomic no-overwrite export commit failed") from exc
+        temporary.unlink()
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -154,7 +163,7 @@ def _docx_paragraph(document: DocumentObject, key: str) -> Paragraph:
     raise UnsafeExportError(f"DOCX location does not identify a paragraph: {key}")
 
 
-def _xlsx_target(sheet: Worksheet, question_cell: str):
+def _xlsx_target(sheet: Worksheet, question_cell: str) -> Cell:
     cell = sheet[question_cell]
     merged_question = next(
         (merged for merged in sheet.merged_cells.ranges if cell.coordinate in merged),
