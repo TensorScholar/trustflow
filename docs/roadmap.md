@@ -6,17 +6,22 @@
 - strict domain and adapter contracts;
 - fixture-based evaluation and adversarial document tests;
 - safe persistence and hash-linked audit evidence;
+- exact review/evidence provenance binding and source-change impact analysis;
 - CLI and optional API;
+- one narrowly scoped GitHub exact-file evidence integration;
 - reviewable release and validation evidence.
 
 ## After external review
 
-Priorities are deliberately narrow:
+Priorities remain deliberately narrow:
 
 1. run a real pilot using sanitized, synthetic or customer-approved data;
-2. add at most one narrowly scoped enterprise connector with an explicit authorization model;
+2. validate the existing GitHub exact-file integration with an operator-controlled, read-only
+   credential where appropriate; do not add a second connector without pilot evidence;
 3. fix reliability and usability problems demonstrated by pilot evidence;
 4. stabilize the `0.1.0` release without expanding into a generic automation platform.
+
+The original connector ceiling has been consumed by the GitHub exact-file source. Broad connector work remains deferred unless a real pilot demonstrates that another system is the dominant workflow bottleneck.
 
 ## Success metrics
 
