@@ -43,8 +43,8 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - transactional SQLite audit sequencing with a hash-linked event chain;
 - deterministic source-content/provenance impact scans with latest review context;
 - GitHub evidence reads restricted to an explicit repository/file, fixed API origin, GET-only client,
-  no redirect following, environment-only token input, immutable commit pinning and explicit source
-  approval.
+  no redirect following, environment-only token input, race-free repository commit pinning,
+  file-level version/freshness derivation and explicit source approval.
 
 ## Risk register
 
@@ -63,7 +63,8 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 | Audit race/tampering | Sequence or history becomes inconsistent | Transactional append, hash chain, concurrency/tamper tests |
 | Prompt injection in evidence | Source text attempts to alter system policy | Treat source text strictly as evidence, never executable instruction |
 | GitHub credential leakage | Token appears in CLI history, stored source, error body or redirect target | Environment-only token, token-free source/audit metadata, sanitized errors, redirects disabled |
-| GitHub overreach | Connector browses or mutates more repository data than intended | Exact repository/file locator, two GET operations, immutable commit pin, operator-provided read-only repository credential |
+| GitHub overreach | Connector browses or mutates more repository data than intended | Exact repository/file locator; three scoped GETs for ref resolution, exact-file fetch and path history; operator-provided read-only repository credential |
+| False GitHub freshness | Unrelated repository commits make unchanged evidence look newer or changed | Derive `version` and `updated_at` from the latest commit that touched the exact path, while using the resolved repository commit only to pin the fetch |
 | Cross-tenant leakage | Future hosted search mixes tenants | Tenant isolation must exist before multi-tenant hosting |
 
 ## Residual risk
