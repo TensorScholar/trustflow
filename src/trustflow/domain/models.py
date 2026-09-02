@@ -127,6 +127,7 @@ class DraftAnswer(StrictModel):
 class ReviewDecision(StrictModel):
     id: str = Field(default_factory=lambda: f"rev_{uuid4().hex}")
     answer_id: NonEmptyText
+    answer_digest: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     reviewer: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=320)]
     state: ReviewState
     final_text: str = Field(default="", max_length=100_000)
@@ -137,6 +138,8 @@ class ReviewDecision(StrictModel):
     def validate_final_text(self) -> Self:
         if self.state in {ReviewState.APPROVED, ReviewState.EDITED} and not self.final_text.strip():
             raise ValueError("approved or edited review requires non-blank final_text")
+        if self.state is ReviewState.REJECTED and self.final_text:
+            raise ValueError("rejected review cannot carry final_text")
         return self
 
 
