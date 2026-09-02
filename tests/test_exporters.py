@@ -289,9 +289,7 @@ def test_export_blocks_questionnaire_changed_since_import(tmp_path) -> None:
 def test_export_blocks_questionnaire_without_source_fingerprint(tmp_path) -> None:
     source = tmp_path / "q.json"
     source.write_text('{"questions":["Question?"]}', encoding="utf-8")
-    questionnaire = ParserRegistry().parse(source).model_copy(
-        update={"source_digest": "0" * 64}
-    )
+    questionnaire = ParserRegistry().parse(source).model_copy(update={"source_digest": "0" * 64})
 
     with pytest.raises(UnsafeExportError, match="source fingerprint is missing"):
         ExporterRegistry().export(
