@@ -1,5 +1,12 @@
+import json
+import sqlite3
+from datetime import UTC, datetime
+
+import pytest
+
 from trustflow.adapters.sqlite import SQLiteStore
 from trustflow.domain.audit import make_event
+from trustflow.domain.errors import InvalidTransitionError
 from trustflow.domain.models import (
     AnswerStatus,
     DocumentFormat,
@@ -67,7 +74,62 @@ def test_sqlite_roundtrip(tmp_path) -> None:
     assert store.get_answer("a") == answer
     assert store.list_answers("n") == [answer]
     assert store.get_review_for_answer("a") == review
+    assert store.list_reviews_for_answer("a") == [review]
     assert store.list_audit() == [event]
+
+
+def test_sqlite_review_history_is_append_only(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "reviews.db")
+    first = ReviewDecision(
+        id="r1",
+        answer_id="a",
+        reviewer="one",
+        state=ReviewState.REJECTED,
+    )
+    second = ReviewDecision(
+        id="r2",
+        answer_id="a",
+        reviewer="two",
+        state=ReviewState.APPROVED,
+        final_text="A",
+    )
+    store.put_review(first)
+    store.put_review(second)
+
+    assert store.list_reviews_for_answer("a") == [first, second]
+    assert store.get_review_for_answer("a") == second
+    with pytest.raises(InvalidTransitionError, match="already exists"):
+        store.put_review(second)
+
+
+def test_sqlite_migrates_legacy_single_review_as_unbound_history(tmp_path) -> None:
+    path = tmp_path / "legacy.db"
+    created_at = datetime.now(UTC).isoformat()
+    legacy_payload = json.dumps(
+        {
+            "id": "legacy-review",
+            "answer_id": "a",
+            "reviewer": "legacy-label",
+            "state": "approved",
+            "final_text": "A",
+            "note": "",
+            "created_at": created_at,
+        }
+    )
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE reviews(answer_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO reviews(answer_id,payload) VALUES(?,?)",
+            ("a", legacy_payload),
+        )
+
+    store = SQLiteStore(path)
+    history = store.list_reviews_for_answer("a")
+    assert len(history) == 1
+    assert history[0].id == "legacy-review"
+    assert history[0].answer_digest == "0" * 64
 
 
 def test_concurrent_audit_appends_are_serialized(tmp_path) -> None:
