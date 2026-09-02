@@ -80,7 +80,7 @@ def ingest_github_source(
             help="Explicitly approve this source for retrieval. Defaults to unapproved.",
         ),
     ] = False,
-    maximum_file_bytes: Annotated[int, typer.Option(min=1)] = 1_000_000,
+    maximum_file_bytes: Annotated[int, typer.Option(min=1, max=1_000_000)] = 1_000_000,
 ) -> None:
     token = os.environ.get("TRUSTFLOW_GITHUB_TOKEN", "")
     if not token:
