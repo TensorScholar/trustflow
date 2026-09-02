@@ -3,7 +3,16 @@
 - no OCR;
 - no macro-enabled documents;
 - no browser extension;
-- no live enterprise connectors;
+- external evidence integration is limited to one explicit GitHub exact-file reader; there is no
+  repository search, broad synchronization, Google Drive, Confluence, Notion, or generic connector
+  framework;
+- pull-request connector CI uses deterministic mocked API transport; `main` CI adds a real read-only
+  GitHub API smoke against this repository using the ephemeral Actions token, but neither proves
+  arbitrary organization credentials, SSO policy, private-repository permission scope, or deployment
+  network reachability;
+- GitHub `updated_at` is derived from repository commit metadata and is provenance, not independent
+  attestation of when a policy/control became operationally valid; repository-supplied timestamps
+  therefore require source-specific governance for higher-assurance freshness claims;
 - lexical retrieval is inspectable but not semantic;
 - conflict detection is conservative and lexical;
 - reviewer values are caller-supplied labels, not authenticated or cryptographically verified

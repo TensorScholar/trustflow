@@ -8,7 +8,8 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - internal policies and approved answer libraries;
 - externally shared claims;
 - reviewer labels and decisions;
-- source-version, provenance and audit evidence.
+- source-version, provenance and audit evidence;
+- external-source credentials used by optional adapters.
 
 ## Primary threats
 
@@ -19,11 +20,13 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 5. accidental source-file mutation or partial output;
 6. arbitrary server-local file access through the web adapter;
 7. concurrent audit writers corrupting sequence or chain integrity;
-8. future cross-tenant retrieval or over-privileged enterprise connectors;
+8. external connector credential leakage, redirect exfiltration or over-privileged access;
 9. source content or provenance metadata changing while dependent answer snapshots remain trusted;
 10. stale review replay after the reviewed draft or evidence snapshot changes;
 11. persisted evidence metadata being altered while source fingerprints remain unchanged;
-12. governed state committing while its corresponding audit event is lost after a persistence failure.
+12. governed state committing while its corresponding audit event is lost after a persistence failure;
+13. repository-provided timestamps being mistaken for independent freshness attestation;
+14. future cross-tenant retrieval mixing tenant data.
 
 ## Current controls
 
@@ -43,7 +46,11 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - controlled multipart upload storage for the optional API;
 - unit-of-work transactions that commit governed internal state mutations and their audit events together;
 - transactional SQLite audit sequencing with a hash-linked event chain;
-- deterministic source-content/provenance impact scans with latest review context.
+- deterministic source-content/provenance impact scans with latest review context;
+- GitHub evidence reads restricted to an explicit repository/file, fixed API origin, GET-only client,
+  no redirect following, environment-only token input, race-free repository commit pinning,
+  file-level version/freshness derivation, decoded-byte Git blob verification and explicit source
+  approval.
 
 ## Risk register
 
@@ -63,11 +70,15 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 | API file disclosure | Remote caller reads server-local paths | Multipart upload only; generated storage names; response redaction |
 | Audit race/tampering | Sequence or history becomes inconsistent | Transactional append, hash chain, concurrency/tamper tests |
 | Prompt injection in evidence | Source text attempts to alter system policy | Treat source text strictly as evidence, never executable instruction |
+| GitHub credential leakage | Token appears in CLI history, stored source, error body or redirect target | Environment-only token, token-free source/audit metadata, sanitized errors, redirects disabled |
+| GitHub overreach | Connector browses or mutates more repository data than intended | Exact repository/file locator; three scoped GETs for ref resolution, exact-file fetch and path history; operator-provided read-only repository credential |
+| GitHub payload inconsistency | Decoded file bytes do not correspond to the content API's reported Git object | Recompute the Git blob object identity over decoded bytes and fail closed on mismatch |
+| False GitHub freshness | Unrelated repository commits make unchanged evidence look newer or changed | Derive `version` and `updated_at` from the latest commit that touched the exact path, while using the resolved repository commit only to pin the fetch |
+| Unattested GitHub freshness | Repository commit time is treated as independent proof of policy/control validity | Label commit time as source provenance only; require authoritative source-specific validity semantics for higher-assurance freshness claims |
 | Cross-tenant leakage | Future hosted search mixes tenants | Tenant isolation must exist before multi-tenant hosting |
-| Connector privilege | External connector reads or writes too broadly | Scoped authorization and connector-specific threat review before release |
 
 ## Residual risk
 
-TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or enterprise connector credential system. Reviewer values are caller-supplied labels rather than authenticated identities. Exported filesystem artifacts and SQLite audit records remain separate resources without a distributed transaction or recovery journal. The optional API does not provide the production controls listed in `SECURITY.md`.
+TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or connector credential-management system. The GitHub adapter cannot prove that the supplied credential is least-privileged, correctly governed by organization SSO, or rotated appropriately; those remain deployment responsibilities. Git commit timestamps are repository-supplied provenance and are not independent evidence of operational validity. Reviewer values are caller-supplied labels rather than authenticated identities. Exported filesystem artifacts and SQLite audit records remain separate resources without a distributed transaction or recovery journal. The optional API does not provide the production controls listed in `SECURITY.md`.
 
 These are explicit release boundaries, not implied future guarantees. See [limitations](limitations.md).

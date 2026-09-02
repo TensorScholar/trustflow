@@ -26,9 +26,10 @@ RFP and security-questionnaire workflows fail when generated answers cannot be t
 - fail-closed export with source-file overwrite protection;
 - safe XLSX, DOCX, CSV, JSON, Markdown and text-extractable PDF handling;
 - source-change impact analysis across answer/evidence snapshots, including latest review context;
+- one narrow, commit-pinned GitHub exact-file evidence source;
 - hash-chained audit events and measurable workflow outcomes.
 
-No API key is required for the default workflow.
+No API key is required for the default local workflow.
 
 ## Quick start
 
@@ -50,6 +51,28 @@ pytest --cov=trustflow --cov-branch
 ```
 
 CI validates the supported Python 3.11, 3.12 and 3.13 matrix.
+
+## GitHub evidence source
+
+Install the optional connector and provide its credential only through the environment:
+
+```bash
+python -m pip install -e '.[github]'
+export TRUSTFLOW_GITHUB_TOKEN='...'
+trustflow ingest-github-source \
+  --database trustflow.db \
+  --identifier security-policy \
+  --title 'Security policy' \
+  --owner security \
+  --repository acme/security-policies \
+  --path docs/SECURITY.md \
+  --ref main \
+  --approved
+```
+
+The connector resolves the supplied ref to an immutable commit SHA and then reads the exact file at that commit. It does not search repositories, follow redirects, perform writes, or persist the token. Without `--approved`, the source remains unavailable to default evidence retrieval.
+
+See [GitHub evidence source](docs/integrations/github.md) for its authorization and validation boundary.
 
 ## Supported formats
 
@@ -81,6 +104,7 @@ See [architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-modular-mo
 ## Documentation
 
 - [Architecture and integration contracts](docs/architecture.md)
+- [GitHub evidence source](docs/integrations/github.md)
 - [Supported document formats](docs/formats.md)
 - [Security model and risk register](docs/security-model.md)
 - [Known limitations](docs/limitations.md)
@@ -92,9 +116,9 @@ See [architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-modular-mo
 
 ## Release boundary
 
-Included in `0.1.0rc2`: safe import and extraction, evidence registry and retrieval, deterministic drafting, review gates, conflict/staleness handling, safe export, source-content and source-provenance impact scanning, SQLite/in-memory storage, audit verification, metrics, CLI, optional API, tests and release automation.
+Included in `0.1.0rc2`: safe import and extraction, evidence registry and retrieval, deterministic drafting, review gates, conflict/staleness handling, safe export, source-content and source-provenance impact scanning, SQLite/in-memory storage, audit verification, metrics, CLI, one optional commit-pinned GitHub exact-file evidence connector, optional API, tests and release automation.
 
-Not included: OCR, live enterprise connectors, browser extensions, autonomous legal approval, hosted multi-tenancy, authentication/authorization, production DLP/retention controls, or a production-readiness claim.
+Not included: OCR, broad enterprise connector coverage, repository discovery/search, browser extensions, autonomous legal approval, hosted multi-tenancy, authentication/authorization, production DLP/retention controls, or a production-readiness claim.
 
 ## License
 
