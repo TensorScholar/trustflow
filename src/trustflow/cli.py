@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -10,8 +11,8 @@ from rich.table import Table
 from trustflow._version import __version__
 from trustflow.application.bootstrap import build_service
 from trustflow.demo import run_demo
-from trustflow.domain.errors import InvalidTransitionError
-from trustflow.domain.models import ReviewState, SourceDocument
+from trustflow.domain.errors import InvalidTransitionError, TrustFlowError
+from trustflow.domain.models import ReviewState, SourceClassification, SourceDocument
 
 app = typer.Typer(help="Evidence-governed RFP and security questionnaire automation.")
 console = Console()
@@ -60,6 +61,55 @@ def ingest_source(
         )
     )
     console.print("source ingested")
+
+
+@app.command("ingest-github-source")
+def ingest_github_source(
+    database: Annotated[Path, typer.Option()],
+    identifier: Annotated[str, typer.Option()],
+    title: Annotated[str, typer.Option()],
+    owner: Annotated[str, typer.Option(help="Governance owner for the evidence source.")],
+    repository: Annotated[str, typer.Option(help="Explicit GitHub repository as owner/name.")],
+    path: Annotated[str, typer.Option(help="Exact UTF-8 repository file path.")],
+    ref: Annotated[str, typer.Option(help="Branch, tag, or commit to resolve and pin.")],
+    classification: Annotated[SourceClassification, typer.Option()] = SourceClassification.INTERNAL,
+    approved: Annotated[
+        bool,
+        typer.Option(
+            "--approved/--unapproved",
+            help="Explicitly approve this source for retrieval. Defaults to unapproved.",
+        ),
+    ] = False,
+    maximum_file_bytes: Annotated[int, typer.Option(min=1)] = 1_000_000,
+) -> None:
+    token = os.environ.get("TRUSTFLOW_GITHUB_TOKEN", "")
+    if not token:
+        raise typer.BadParameter("set TRUSTFLOW_GITHUB_TOKEN; tokens are never accepted as CLI args")
+    try:
+        from trustflow.adapters.github_source import GitHubEvidenceSource
+    except ImportError as exc:
+        raise typer.BadParameter("Install with: pip install 'trustflow[github]'") from exc
+
+    service = build_service(database)
+    try:
+        with GitHubEvidenceSource(
+            token=token,
+            maximum_file_bytes=maximum_file_bytes,
+        ) as connector:
+            source = connector.load_file(
+                repository=repository,
+                path=path,
+                ref=ref,
+                identifier=identifier,
+                title=title,
+                evidence_owner=owner,
+                classification=classification,
+                approved=approved,
+            )
+        service.ingest_source(source)
+    except TrustFlowError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"GitHub source ingested at immutable commit {source.version}")
 
 
 @app.command()
