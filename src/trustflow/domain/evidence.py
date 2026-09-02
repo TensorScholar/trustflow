@@ -40,6 +40,21 @@ def source_provenance_digest(source: SourceDocument) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _evidence_snapshot_matches_source(source: SourceDocument, evidence: Evidence) -> bool:
+    """Verify redundant evidence metadata still represents the source bound by its digests."""
+    return (
+        evidence.source_id == source.id
+        and evidence.source_title == source.title
+        and evidence.source_uri == source.source_uri
+        and evidence.source_version == source.version
+        and evidence.owner == source.owner
+        and evidence.updated_at == source.updated_at
+        and evidence.valid_until == source.valid_until
+        and bool(evidence.excerpt.strip())
+        and evidence.excerpt in source.content
+    )
+
+
 def evidence_invalidation_reason(
     source: SourceDocument,
     evidence: Evidence,
@@ -67,4 +82,6 @@ def evidence_invalidation_reason(
         return "source_too_old"
     if source_provenance_digest(source) != evidence.source_provenance_digest:
         return "source_provenance_changed"
+    if not _evidence_snapshot_matches_source(source, evidence):
+        return "evidence_snapshot_changed"
     return None
