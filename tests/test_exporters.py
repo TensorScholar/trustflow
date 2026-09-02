@@ -1,12 +1,26 @@
 import csv
 import json
+from datetime import UTC, datetime
 
 from docx import Document
 from openpyxl import Workbook, load_workbook
 
 from trustflow.adapters.exporters import ExporterRegistry
 from trustflow.adapters.parsers import ParserRegistry
-from trustflow.domain.models import AnswerStatus, DraftAnswer
+from trustflow.domain.models import AnswerStatus, DraftAnswer, Evidence
+
+
+def evidence() -> Evidence:
+    return Evidence(
+        source_id="source",
+        source_title="Source",
+        source_uri="policy://source",
+        source_version="1",
+        owner="owner",
+        excerpt="Approved evidence.",
+        score=1,
+        updated_at=datetime.now(UTC),
+    )
 
 
 def answer(questionnaire_id, question_id, text) -> DraftAnswer:
@@ -16,6 +30,7 @@ def answer(questionnaire_id, question_id, text) -> DraftAnswer:
         text=text,
         status=AnswerStatus.ANSWERED,
         confidence=1,
+        evidence=(evidence(),),
     )
 
 
@@ -122,7 +137,9 @@ def test_json_export(tmp_path) -> None:
         {},
         output,
     )
-    assert json.loads(output.read_text(encoding="utf-8"))[0]["answer"] == "Answer"
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload[0]["answer"] == "Answer"
+    assert payload[0]["sources"][0]["digest"] == "0" * 64
 
 
 def test_formula_neutralization_with_leading_whitespace(tmp_path) -> None:
@@ -193,11 +210,36 @@ def test_exporter_defense_in_depth_blocks_unreviewed_status(tmp_path) -> None:
         text="Draft",
         status=AnswerStatus.REVIEW_REQUIRED,
         confidence=0.8,
+        evidence=(evidence(),),
     )
     with pytest.raises(InvalidTransitionError, match="unresolved"):
         ExporterRegistry().export(
             questionnaire,
             [unresolved],
+            {},
+            tmp_path / "out.json",
+        )
+
+
+def test_exporter_defense_in_depth_blocks_claim_without_evidence(tmp_path) -> None:
+    import pytest
+
+    from trustflow.domain.errors import InvalidTransitionError
+
+    source = tmp_path / "q.json"
+    source.write_text('{"questions":["Question?"]}', encoding="utf-8")
+    questionnaire = ParserRegistry().parse(source)
+    unsupported = DraftAnswer(
+        questionnaire_id=questionnaire.id,
+        question_id="q1",
+        text="Unsupported claim",
+        status=AnswerStatus.ANSWERED,
+        confidence=1,
+    )
+    with pytest.raises(InvalidTransitionError, match="without evidence"):
+        ExporterRegistry().export(
+            questionnaire,
+            [unsupported],
             {},
             tmp_path / "out.json",
         )

@@ -23,6 +23,21 @@ def test_retrieve_matching_source() -> None:
         PolicySettings(),
     )
     assert results[0].source_id == "security"
+    assert len(results[0].source_digest) == 64
+
+
+def test_retrieve_selects_matching_passage_not_first_line() -> None:
+    results = retrieve(
+        "Do you encrypt customer data at rest?",
+        [
+            source(
+                "security",
+                "Company overview is public.\nCustomer data is encrypted at rest with AES-256.",
+            )
+        ],
+        PolicySettings(),
+    )
+    assert results[0].excerpt == "Customer data is encrypted at rest with AES-256."
 
 
 def test_unapproved_source_excluded() -> None:
@@ -36,12 +51,10 @@ def test_unapproved_source_excluded() -> None:
     )
 
 
-def test_old_source_excluded() -> None:
-    assert (
-        retrieve(
-            "encryption",
-            [source("x", "encryption", updated_at=datetime.now(UTC) - timedelta(days=500))],
-            PolicySettings(maximum_source_age_days=30),
-        )
-        == ()
+def test_old_source_is_returned_for_explicit_stale_policy_gate() -> None:
+    results = retrieve(
+        "encryption",
+        [source("x", "encryption", updated_at=datetime.now(UTC) - timedelta(days=500))],
+        PolicySettings(maximum_source_age_days=30),
     )
+    assert results[0].source_id == "x"

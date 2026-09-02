@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 
+from trustflow.domain.evidence import source_content_digest
 from trustflow.domain.models import Evidence, PolicySettings, SourceDocument
 
 _TOKEN = re.compile(r"[a-z0-9][a-z0-9_./-]+", re.IGNORECASE)
+_PASSAGE_SPLIT = re.compile(r"(?<=[.!?])(?:\s+|\n+)|\n+")
 _STOPWORDS = frozenset(
     {
         "a",
@@ -62,46 +64,59 @@ def tokenize(text: str) -> frozenset[str]:
     )
 
 
+def _passages(content: str) -> tuple[str, ...]:
+    passages = tuple(part.strip()[:500] for part in _PASSAGE_SPLIT.split(content) if part.strip())
+    return passages or (content.strip()[:500],)
+
+
+def _score(query_tokens: frozenset[str], text: str) -> float:
+    text_tokens = tokenize(text)
+    overlap = len(query_tokens & text_tokens)
+    if not query_tokens or not overlap:
+        return 0.0
+    score = overlap / math.sqrt(len(query_tokens) * max(1, len(text_tokens)))
+    return min(1.0, score * 2.2 + 0.08)
+
+
 def retrieve(
     query: str,
     sources: list[SourceDocument],
     policy: PolicySettings,
     *,
-    now: datetime | None = None,
     limit: int = 4,
+    now: datetime | None = None,
 ) -> tuple[Evidence, ...]:
-    current_time = now or datetime.now(UTC)
+    # ``now`` remains part of the public pre-1.0 call surface for compatibility. Freshness is
+    # intentionally evaluated by the deterministic policy gate rather than filtered out here.
+    _ = now
     query_tokens = tokenize(query)
-    candidates: list[tuple[float, SourceDocument]] = []
+    candidates: list[tuple[float, SourceDocument, str]] = []
     for source in sources:
         if policy.require_approved_sources and not source.approved:
             continue
-        if source.valid_until is not None and source.valid_until <= current_time:
+        scored_passages = [
+            (_score(query_tokens, passage), passage) for passage in _passages(source.content)
+        ]
+        scored_passages = [
+            item for item in scored_passages if item[0] >= policy.minimum_evidence_score
+        ]
+        if not scored_passages:
             continue
-        age_days = max(0, (current_time - source.updated_at).days)
-        if age_days > policy.maximum_source_age_days:
-            continue
-        source_tokens = tokenize(f"{source.title} {source.content} {' '.join(source.tags)}")
-        overlap = len(query_tokens & source_tokens)
-        if not query_tokens or not overlap:
-            continue
-        score = overlap / math.sqrt(len(query_tokens) * max(1, len(source_tokens)))
-        score = min(1.0, score * 2.2 + 0.08)
-        if score < policy.minimum_evidence_score:
-            continue
-        candidates.append((score, source))
-    candidates.sort(key=lambda item: (-item[0], item[1].id))
+        score, excerpt = max(scored_passages, key=lambda item: (item[0], item[1]))
+        candidates.append((score, source, excerpt))
+    candidates.sort(key=lambda item: (-item[0], item[1].id, item[2]))
     return tuple(
         Evidence(
             source_id=source.id,
             source_title=source.title,
             source_uri=source.source_uri,
             source_version=source.version,
+            source_digest=source_content_digest(source.content),
             owner=source.owner,
-            excerpt=source.content.strip().split("\n", 1)[0][:500],
+            excerpt=excerpt,
             score=round(score, 4),
             updated_at=source.updated_at,
             valid_until=source.valid_until,
         )
-        for score, source in candidates[:limit]
+        for score, source, excerpt in candidates[:limit]
     )

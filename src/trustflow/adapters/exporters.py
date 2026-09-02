@@ -36,14 +36,16 @@ from trustflow.domain.models import (
 
 
 def _final_text(answer: DraftAnswer, review: ReviewDecision | None) -> str:
+    if not answer.evidence:
+        raise InvalidTransitionError("claim without evidence cannot be exported")
     if review is None:
         if answer.status is not AnswerStatus.ANSWERED:
             raise InvalidTransitionError("unresolved answer cannot be exported")
         return answer.text
     if review.state not in {ReviewState.APPROVED, ReviewState.EDITED}:
         raise InvalidTransitionError("rejected review cannot be exported")
-    if answer.status is AnswerStatus.UNANSWERABLE and review.state is not ReviewState.EDITED:
-        raise InvalidTransitionError("unanswerable answer requires an explicit human edit")
+    if answer.status is AnswerStatus.UNANSWERABLE:
+        raise InvalidTransitionError("unanswerable answer cannot become an external claim")
     return review.final_text
 
 
@@ -276,6 +278,7 @@ class ExporterRegistry:
                         {
                             "id": item.source_id,
                             "version": item.source_version,
+                            "digest": item.source_digest,
                             "uri": item.source_uri,
                         }
                         for item in answer.evidence

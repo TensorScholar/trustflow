@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from trustflow.domain.audit import verify_chain
+from trustflow.domain.evidence import evidence_invalidation_reason
 from trustflow.domain.errors import InvalidTransitionError, NotFoundError
 from trustflow.domain.models import (
     AnswerStatus,
@@ -125,8 +127,13 @@ class TrustFlowService:
             raise NotFoundError(f"answer not found: {answer_id}")
         if not reviewer.strip():
             raise InvalidTransitionError("reviewer cannot be blank")
-        if state is ReviewState.APPROVED and answer.status is AnswerStatus.UNANSWERABLE:
-            raise InvalidTransitionError("unanswerable answer requires an explicit human edit")
+        if answer.status is AnswerStatus.UNANSWERABLE and state in {
+            ReviewState.APPROVED,
+            ReviewState.EDITED,
+        }:
+            raise InvalidTransitionError(
+                "unanswerable answer has no approved evidence and cannot become an external claim"
+            )
         if state in {ReviewState.APPROVED, ReviewState.EDITED} and not final_text.strip():
             raise InvalidTransitionError("approved or edited review requires non-blank final text")
         review = ReviewDecision(
@@ -174,11 +181,8 @@ class TrustFlowService:
             if review is None:
                 blocked.append(f"{answer.question_id}:missing_review")
                 continue
-            if (
-                answer.status is AnswerStatus.UNANSWERABLE
-                and review.state is not ReviewState.EDITED
-            ):
-                blocked.append(f"{answer.question_id}:human_edit_required")
+            if answer.status is AnswerStatus.UNANSWERABLE:
+                blocked.append(f"{answer.question_id}:no_evidence")
                 continue
             if answer.status in _RESOLVABLE_WITH_REVIEW and review.state not in {
                 ReviewState.APPROVED,
@@ -191,12 +195,39 @@ class TrustFlowService:
             )
         return reviews
 
+    def _validate_current_evidence(self, answers: list[DraftAnswer]) -> None:
+        current = {source.id: source for source in self.store.list_sources()}
+        current_time = datetime.now(UTC)
+        blocked: list[str] = []
+        for answer in answers:
+            if not answer.evidence:
+                blocked.append(f"{answer.question_id}:no_evidence")
+                continue
+            for evidence in answer.evidence:
+                source = current.get(evidence.source_id)
+                if source is None:
+                    reason = "source_removed"
+                else:
+                    reason = evidence_invalidation_reason(
+                        source,
+                        evidence,
+                        self.policy,
+                        now=current_time,
+                    )
+                if reason is not None:
+                    blocked.append(f"{answer.question_id}:{evidence.source_id}:{reason}")
+        if blocked:
+            raise InvalidTransitionError(
+                "export blocked by invalid evidence: " + ", ".join(blocked)
+            )
+
     def export(self, questionnaire_id: str, output: str | Path) -> ExportResult:
         questionnaire = self.store.get_questionnaire(questionnaire_id)
         if questionnaire is None:
             raise NotFoundError(f"questionnaire not found: {questionnaire_id}")
         answers = self._validated_answers(questionnaire)
         reviews = self._validated_reviews(answers)
+        self._validate_current_evidence(answers)
         result = self.exporter.export(questionnaire, answers, reviews, Path(output))
         self._audit(
             "questionnaire.exported",
@@ -208,29 +239,30 @@ class TrustFlowService:
     def impact_scan(self) -> list[ImpactFinding]:
         findings: list[ImpactFinding] = []
         current = {source.id: source for source in self.store.list_sources()}
+        current_time = datetime.now(UTC)
         for answer in self.store.list_answers():
             for evidence in answer.evidence:
                 source = current.get(evidence.source_id)
                 if source is None:
-                    findings.append(
-                        ImpactFinding(
-                            answer_id=answer.id,
-                            question_id=answer.question_id,
-                            source_id=evidence.source_id,
-                            previous_version=evidence.source_version,
-                            current_version=None,
-                            reason="source_removed",
-                        )
+                    reason = "source_removed"
+                    current_version = None
+                else:
+                    reason = evidence_invalidation_reason(
+                        source,
+                        evidence,
+                        self.policy,
+                        now=current_time,
                     )
-                elif source.version != evidence.source_version:
+                    current_version = source.version
+                if reason is not None:
                     findings.append(
                         ImpactFinding(
                             answer_id=answer.id,
                             question_id=answer.question_id,
                             source_id=evidence.source_id,
                             previous_version=evidence.source_version,
-                            current_version=source.version,
-                            reason="source_version_changed",
+                            current_version=current_version,
+                            reason=reason,
                         )
                     )
         return findings

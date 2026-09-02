@@ -103,6 +103,7 @@ class Evidence(StrictModel):
     source_title: NonEmptyText
     source_uri: NonEmptyText
     source_version: NonEmptyText
+    source_digest: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     owner: NonEmptyText
     excerpt: str
     score: Confidence

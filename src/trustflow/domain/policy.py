@@ -35,6 +35,11 @@ def decide_status(
         return AnswerStatus.UNANSWERABLE, ("no_approved_evidence",)
     if any(item.valid_until is not None and item.valid_until <= current_time for item in evidence):
         return AnswerStatus.STALE, ("source_expired",)
+    if any(
+        max(0, (current_time - item.updated_at).days) > policy.maximum_source_age_days
+        for item in evidence
+    ):
+        return AnswerStatus.STALE, ("source_age_exceeded",)
     if evidence_conflicts(evidence):
         return AnswerStatus.CONFLICT, ("sources_conflict",)
     if confidence < policy.minimum_answer_confidence:
