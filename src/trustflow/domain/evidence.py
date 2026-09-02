@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime
 
 from trustflow.domain.models import Evidence, PolicySettings, SourceDocument
@@ -15,6 +16,17 @@ def source_content_digest(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def source_provenance_digest(source: SourceDocument) -> str:
+    """Fingerprint governance metadata whose drift must invalidate an evidence snapshot."""
+    payload = json.dumps(
+        source.model_dump(mode="json", exclude={"content"}),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def evidence_invalidation_reason(
     source: SourceDocument,
     evidence: Evidence,
@@ -24,7 +36,10 @@ def evidence_invalidation_reason(
 ) -> str | None:
     """Return the deterministic reason an evidence snapshot is no longer reusable."""
     current_time = now or datetime.now(UTC)
-    if evidence.source_digest == _MISSING_DIGEST:
+    if (
+        evidence.source_digest == _MISSING_DIGEST
+        or evidence.source_provenance_digest == _MISSING_DIGEST
+    ):
         return "source_snapshot_missing"
     if policy.require_approved_sources and not source.approved:
         return "source_revoked"
@@ -32,6 +47,8 @@ def evidence_invalidation_reason(
         return "source_version_changed"
     if source_content_digest(source.content) != evidence.source_digest:
         return "source_content_changed"
+    if source_provenance_digest(source) != evidence.source_provenance_digest:
+        return "source_provenance_changed"
     if source.valid_until is not None and source.valid_until <= current_time:
         return "source_expired"
     age_days = max(0, (current_time - source.updated_at).days)
