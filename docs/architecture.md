@@ -37,11 +37,13 @@ Returns stable question IDs plus explicit source locations. Parsers must treat d
 
 ### Exporter
 
-Writes final answer text only after application policy allows export. Export adapters repeat critical validation as defense in depth, neutralize formula-like spreadsheet output, reject unsafe source/destination relationships and replace completed output atomically.
+Writes final answer text only after application policy allows export. Export adapters repeat critical validation as defense in depth, neutralize formula-like spreadsheet output, reject unsafe source/destination relationships and commit completed output with an atomic create-if-absent operation.
 
 ### Store
 
-Persistence is exposed through ports. SQLite is the durable single-node implementation; an in-memory store supports deterministic tests and demos.
+Persistence is exposed through ports. Governed state mutations and their audit events share an explicit transaction / unit-of-work boundary: either both commit or neither commits. SQLite implements this with one database transaction; the in-memory adapter provides rollback-equivalent semantics for deterministic tests and demos.
+
+SQLite is the durable single-node implementation. The store transaction does not pretend to provide a distributed transaction across SQLite and exported filesystem artifacts; that external-resource boundary is documented separately as a release limitation.
 
 ### Optional web adapter
 
