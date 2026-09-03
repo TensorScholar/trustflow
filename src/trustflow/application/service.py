@@ -182,6 +182,14 @@ class TrustFlowService:
             raise InvalidTransitionError(
                 "stale evidence must be refreshed and revalidated before approval"
             )
+        if state in _SUCCESSFUL_REVIEW_STATES:
+            try:
+                self._validate_current_evidence([answer])
+            except InvalidTransitionError as exc:
+                raise InvalidTransitionError(
+                    "review blocked by invalid evidence; refresh the source and revalidate: "
+                    f"{exc}"
+                ) from exc
         if state in _SUCCESSFUL_REVIEW_STATES and not final_text.strip():
             raise InvalidTransitionError("approved or edited review requires non-blank final text")
         if state is ReviewState.APPROVED and final_text != answer.text:
@@ -370,11 +378,18 @@ class TrustFlowService:
             raise NotFoundError(f"questionnaire not found: {questionnaire_id}")
         answers = self._validated_answers(questionnaire)
         current = {source.id: source for source in self.store.list_sources()}
-        findings = [
+        all_findings = [
             item
-            for item in self._impact_findings(current, source_id)
+            for item in self._impact_findings(current)
             if item.questionnaire_id == questionnaire.id
         ]
+        if source_id is None:
+            findings = all_findings
+        else:
+            selected_answers = {
+                item.answer_id for item in all_findings if item.source_id == source_id
+            }
+            findings = [item for item in all_findings if item.answer_id in selected_answers]
         findings_by_answer: dict[str, list[ImpactFinding]] = {}
         for finding in findings:
             findings_by_answer.setdefault(finding.answer_id, []).append(finding)
