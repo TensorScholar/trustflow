@@ -76,7 +76,8 @@ def load_adversarial_corpus() -> AdversarialCorpus:
         missing = sorted(item.value for item in required - covered)
         unexpected = sorted(item.value for item in covered - required)
         raise ValueError(
-            f"adversarial corpus scenario coverage mismatch; missing={missing}, unexpected={unexpected}"
+            "adversarial corpus scenario coverage mismatch; "
+            f"missing={missing}, unexpected={unexpected}"
         )
 
     draft_by_id = {case.id: case for case in corpus.draft_cases}
