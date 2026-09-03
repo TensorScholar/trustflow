@@ -48,6 +48,15 @@ def test_explicit_mismatch_fails_but_undeclared_scope_is_not_treated_as_global()
     assert source_matches_claim_scope(requested, ApplicabilityScope())
 
 
+def test_multiple_requested_scope_values_require_complete_declared_coverage() -> None:
+    requested = ApplicabilityScope(products=frozenset({"cloud", "onprem"}))
+    cloud_only = ApplicabilityScope(products=frozenset({"cloud"}))
+    both = ApplicabilityScope(products=frozenset({"cloud", "onprem"}))
+
+    assert not source_matches_claim_scope(requested, cloud_only)
+    assert source_matches_claim_scope(requested, both)
+
+
 def test_any_unresolved_citation_scope_requires_review() -> None:
     question = "Does the cloud product encrypt customer data at rest?"
     scoped = _source(ApplicabilityScope(products=frozenset({"cloud"})))
