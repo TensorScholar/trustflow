@@ -123,15 +123,11 @@ def evaluate_adversarial_cases(
         citation_precision=(
             citation_hits / citation_predicted_total if citation_predicted_total else 1.0
         ),
-        false_acceptance_rate=(
-            false_acceptances / non_auto_cases if non_auto_cases else 0.0
-        ),
+        false_acceptance_rate=(false_acceptances / non_auto_cases if non_auto_cases else 0.0),
         auto_answer_precision=(safe_auto_answers / auto_answers if auto_answers else 1.0),
         forbidden_citation_rate=(forbidden_hits / forbidden_cases if forbidden_cases else 0.0),
         unsupported_answer_rate=unsupported / total if total else 0.0,
-        sensitive_auto_approval_rate=(
-            sensitive_auto / sensitive_cases if sensitive_cases else 0.0
-        ),
+        sensitive_auto_approval_rate=(sensitive_auto / sensitive_cases if sensitive_cases else 0.0),
         failed_case_ids=tuple(failed_case_ids),
         scenario_failures=dict(sorted(scenario_failures.items())),
     )
