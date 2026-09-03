@@ -1,10 +1,13 @@
 import logging
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import JSONResponse, Response
 
 from trustflow._version import __version__
 from trustflow.application.bootstrap import build_service
@@ -29,14 +32,49 @@ def _public_questionnaire(item: Questionnaire) -> dict[str, object]:
     return payload
 
 
+def _is_loopback_client(host: str | None) -> bool:
+    if host is None:
+        return False
+    candidate = host.strip().removeprefix("[").removesuffix("]")
+    if candidate.casefold() == "localhost":
+        return True
+    try:
+        return ip_address(candidate).is_loopback
+    except ValueError:
+        return False
+
+
+def _apply_security_headers(response: Response) -> Response:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 def create_app(
     database: str | Path = "trustflow.db",
     upload_dir: str | Path = ".trustflow/uploads",
+    *,
+    allow_remote: bool = False,
 ) -> FastAPI:
     service = build_service(database)
     upload_root = Path(upload_dir).expanduser().resolve()
     upload_root.mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="TrustFlow", version=__version__)
+
+    @app.middleware("http")
+    async def security_boundary(
+        request: Request,
+        call_next: RequestResponseEndpoint,
+    ) -> Response:
+        client_host = request.client.host if request.client is not None else None
+        if not allow_remote and not _is_loopback_client(client_host):
+            return _apply_security_headers(
+                JSONResponse(status_code=403, content={"detail": "remote API access is disabled"})
+            )
+        response = await call_next(request)
+        return _apply_security_headers(response)
 
     @app.get("/health")
     def health() -> dict[str, str]:
