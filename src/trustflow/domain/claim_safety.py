@@ -81,7 +81,10 @@ def infer_claim_scope(question: str) -> ApplicabilityScope:
             r"\b(?:in|for)\s+(?:the\s+)?([a-z0-9][a-z0-9_-]*)\s+region\b",
             re.IGNORECASE,
         ),
-        re.compile(r"\bregion\s+([a-z0-9][a-z0-9_-]*)\b", re.IGNORECASE),
+        re.compile(
+            r"\bregion\s+(?:named|called)\s+([a-z0-9][a-z0-9_-]*)\b",
+            re.IGNORECASE,
+        ),
     )
     deployment_patterns = (
         re.compile(
@@ -169,7 +172,7 @@ def _applicability_unknown_reasons(
         if not requested:
             continue
         declared = [_canonical_values(values) for values in declared_values]
-        if declared and all(not values for values in declared):
+        if declared and any(not values for values in declared):
             reasons.append(f"applicability_unknown:{name}")
     return tuple(reasons)
 
