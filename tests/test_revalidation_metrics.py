@@ -131,6 +131,64 @@ def test_revalidation_preserves_review_history_but_expires_old_approval(service,
     service.export(questionnaire.id, tmp_path / "fresh-review.json")
 
 
+def test_review_rejects_source_drift_before_recording_approval(service, tmp_path) -> None:
+    questionnaire = service.import_questionnaire(
+        _questionnaire(tmp_path, "Do you encrypt customer data at rest?")
+    )
+    answer = service.draft(questionnaire.id)[0]
+    source = service.store.get_source("security")
+    assert source is not None
+    service.ingest_source(source.model_copy(update={"version": "2"}))
+
+    with pytest.raises(InvalidTransitionError, match="review blocked by invalid evidence") as exc:
+        service.review(
+            answer.id,
+            reviewer="security",
+            state=ReviewState.APPROVED,
+            final_text=answer.text,
+        )
+    assert "source_version_changed" in str(exc.value)
+    assert service.review_history(answer.id) == []
+
+
+def test_source_filtered_revalidation_preserves_all_answer_level_impact_causes(
+    service,
+    tmp_path,
+) -> None:
+    service.ingest_source(
+        SourceDocument(
+            id="security-copy",
+            title="Security implementation",
+            owner="security",
+            version="1",
+            content="Customer data is encrypted at rest with AES-256.",
+            source_uri="policy://security/copy",
+            updated_at=datetime.now(UTC),
+            tags=frozenset({"encrypt", "customer", "data", "rest", "aes-256"}),
+        )
+    )
+    questionnaire = service.import_questionnaire(
+        _questionnaire(tmp_path, "Do you encrypt customer data at rest?")
+    )
+    answer = service.draft(questionnaire.id)[0]
+    assert {item.source_id for item in answer.evidence} >= {"security", "security-copy"}
+
+    security = service.store.get_source("security")
+    copy = service.store.get_source("security-copy")
+    assert security is not None and copy is not None
+    service.ingest_source(security.model_copy(update={"version": "2"}))
+    service.ingest_source(copy.model_copy(update={"version": "2"}))
+
+    refreshed = service.revalidate(questionnaire.id, source_id="security")
+    assert len(refreshed) == 1
+    event = next(
+        item
+        for item in reversed(service.store.list_audit())
+        if item.event_type == "answer.revalidated"
+    )
+    assert event.payload["changed_source_ids"] == ["security", "security-copy"]
+
+
 def test_stale_evidence_cannot_be_made_current_by_human_approval(service, tmp_path) -> None:
     source = service.store.get_source("security")
     assert source is not None
