@@ -11,9 +11,50 @@
       "title": "AnswerStatus",
       "type": "string"
     },
+    "ApplicabilityScope": {
+      "additionalProperties": false,
+      "description": "Explicit dimensions that bound where an evidence source may support a claim.",
+      "properties": {
+        "deployment_models": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Deployment Models",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "products": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Products",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "regions": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "title": "ApplicabilityScope",
+      "type": "object"
+    },
     "Evidence": {
       "additionalProperties": false,
       "properties": {
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityScope"
+        },
         "excerpt": {
           "title": "Excerpt",
           "type": "string"
