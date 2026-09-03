@@ -40,6 +40,9 @@ def test_revalidation_preserves_identity_and_requires_review_after_source_change
     original = service.draft(questionnaire.id)[0]
     assert original.status is AnswerStatus.ANSWERED
     service.export(questionnaire.id, tmp_path / "before.json")
+    first_draft_seconds = service.governance_metrics(questionnaire.id)[
+        "time_to_first_draft_seconds"
+    ]
 
     _ingest_company_source(service, version="2", color="green")
     scorecard_before = service.governance_metrics(questionnaire.id)
@@ -64,6 +67,7 @@ def test_revalidation_preserves_identity_and_requires_review_after_source_change
     assert scorecard_pending["review_required_answers"] == 1
     assert scorecard_pending["review_completion_rate"] == 0.0
     assert scorecard_pending["external_claim_ready_rate"] == 0.0
+    assert scorecard_pending["time_to_first_draft_seconds"] == first_draft_seconds
 
     with pytest.raises(InvalidTransitionError, match="missing_review"):
         service.export(questionnaire.id, tmp_path / "blocked.json")
@@ -80,7 +84,7 @@ def test_revalidation_preserves_identity_and_requires_review_after_source_change
     assert scorecard_ready["external_claim_ready_rate"] == 1.0
     assert scorecard_ready["external_claim_blocked_rate"] == 0.0
     assert scorecard_ready["reviewer_edit_rate"] == 0.0
-    assert scorecard_ready["time_to_first_draft_seconds"] >= 0.0
+    assert scorecard_ready["time_to_first_draft_seconds"] == first_draft_seconds
     assert scorecard_ready["median_review_turnaround_seconds"] >= 0.0
 
     revalidation_events = [
@@ -207,7 +211,9 @@ def test_stale_evidence_cannot_be_made_current_by_human_approval(service, tmp_pa
                 answer.id,
                 reviewer="security",
                 state=state,
-                final_text=(answer.text if state is ReviewState.APPROVED else answer.text + " Confirmed."),
+                final_text=(
+                    answer.text if state is ReviewState.APPROVED else answer.text + " Confirmed."
+                ),
             )
 
     with pytest.raises(InvalidTransitionError, match="stale_evidence"):
