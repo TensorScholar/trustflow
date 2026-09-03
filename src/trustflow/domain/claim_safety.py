@@ -71,7 +71,10 @@ def infer_claim_scope(question: str) -> ApplicabilityScope:
 
     product_patterns = (
         re.compile(r"\b([a-z0-9][a-z0-9_-]*)\s+product\b", re.IGNORECASE),
-        re.compile(r"\bproduct\s+([a-z0-9][a-z0-9_-]*)\b", re.IGNORECASE),
+        re.compile(
+            r"\bproduct\s+(?:named|called)\s+([a-z0-9][a-z0-9_-]*)\b",
+            re.IGNORECASE,
+        ),
     )
     region_patterns = (
         re.compile(
