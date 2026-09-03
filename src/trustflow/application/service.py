@@ -187,8 +187,7 @@ class TrustFlowService:
                 self._validate_current_evidence([answer])
             except InvalidTransitionError as exc:
                 raise InvalidTransitionError(
-                    "review blocked by invalid evidence; refresh the source and revalidate: "
-                    f"{exc}"
+                    f"review blocked by invalid evidence; refresh the source and revalidate: {exc}"
                 ) from exc
         if state in _SUCCESSFUL_REVIEW_STATES and not final_text.strip():
             raise InvalidTransitionError("approved or edited review requires non-blank final text")
@@ -263,7 +262,10 @@ class TrustFlowService:
             if review is None:
                 blocked.append(f"{answer.question_id}:missing_review")
                 continue
-            if answer.status in _RESOLVABLE_WITH_REVIEW and review.state not in _SUCCESSFUL_REVIEW_STATES:
+            if (
+                answer.status in _RESOLVABLE_WITH_REVIEW
+                and review.state not in _SUCCESSFUL_REVIEW_STATES
+            ):
                 blocked.append(f"{answer.question_id}:unresolved")
         if blocked:
             raise InvalidTransitionError(
@@ -423,9 +425,7 @@ class TrustFlowService:
                         "previous_status": previous.status.value,
                         "current_status": answer.status.value,
                         "impact_reasons": sorted({item.reason for item in answer_findings}),
-                        "changed_source_ids": sorted(
-                            {item.source_id for item in answer_findings}
-                        ),
+                        "changed_source_ids": sorted({item.source_id for item in answer_findings}),
                         "selected_source_ids": [item.source_id for item in answer.evidence],
                     },
                 )
@@ -542,12 +542,18 @@ class TrustFlowService:
         ]
         ready_count = sum(export_ready(answer) for answer in answers)
         current_evidence_count = sum(evidence_is_current(answer) for answer in answers)
+        answer_ids = {answer.id for answer in answers}
+        draft_events = [
+            event
+            for event in self.store.list_audit()
+            if event.event_type == "answer.drafted" and event.entity_id in answer_ids
+        ]
         first_draft_seconds = (
             max(
                 0.0,
-                (min(item.generated_at for item in answers) - questionnaire.imported_at).total_seconds(),
+                (min(event.occurred_at for event in draft_events) - questionnaire.imported_at).total_seconds(),
             )
-            if answers
+            if draft_events
             else 0.0
         )
 
