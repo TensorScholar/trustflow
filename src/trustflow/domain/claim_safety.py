@@ -146,18 +146,26 @@ def _applicability_unknown_reasons(
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     dimensions = (
-        ("product", claim_scope.products, lambda item: item.applicability.products),
-        ("region", claim_scope.regions, lambda item: item.applicability.regions),
+        (
+            "product",
+            claim_scope.products,
+            tuple(item.applicability.products for item in evidence),
+        ),
+        (
+            "region",
+            claim_scope.regions,
+            tuple(item.applicability.regions for item in evidence),
+        ),
         (
             "deployment_model",
             claim_scope.deployment_models,
-            lambda item: item.applicability.deployment_models,
+            tuple(item.applicability.deployment_models for item in evidence),
         ),
     )
-    for name, requested, selector in dimensions:
+    for name, requested, declared_values in dimensions:
         if not requested:
             continue
-        declared = [_canonical_values(selector(item)) for item in evidence]
+        declared = [_canonical_values(values) for values in declared_values]
         if declared and all(not values for values in declared):
             reasons.append(f"applicability_unknown:{name}")
     return tuple(reasons)
