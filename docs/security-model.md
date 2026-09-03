@@ -20,13 +20,16 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 5. accidental source-file mutation or partial output;
 6. arbitrary server-local file access through the web adapter;
 7. concurrent audit writers corrupting sequence or chain integrity;
-8. external connector credential leakage, redirect exfiltration or over-privileged access;
+8. external connector credential leakage, redirect exfiltration, implicit proxying or over-privileged access;
 9. source content or provenance metadata changing while dependent answer snapshots remain trusted;
 10. stale review replay after the reviewed draft or evidence snapshot changes;
 11. persisted evidence metadata being altered while source fingerprints remain unchanged;
 12. governed state committing while its corresponding audit event is lost after a persistence failure;
 13. repository-provided timestamps being mistaken for independent freshness attestation;
-14. future cross-tenant retrieval mixing tenant data.
+14. future cross-tenant retrieval mixing tenant data;
+15. accidentally exposing the unauthenticated evaluation API on a non-loopback interface;
+16. browser/client caching or framing of sensitive API responses increasing disclosure surface;
+17. software vulnerabilities escaping lightweight lint/custom static checks.
 
 ## Current controls
 
@@ -36,7 +39,7 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - spreadsheet formula neutralization;
 - evidence-only deterministic generation by default;
 - approved/current source filtering;
-- sensitivity, staleness and conflict gates;
+- applicability, sensitivity, staleness and conflict gates;
 - fail-closed human-review requirements at service and exporter boundaries;
 - review decisions bound to a canonical digest of the exact draft and evidence snapshot;
 - append-only review history with the latest recorded decision governing export;
@@ -44,13 +47,19 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 - redundant evidence metadata and excerpts revalidated against the currently fingerprinted source before export;
 - same-source-path rejection and atomic create-if-absent destination commit;
 - controlled multipart upload storage for the optional API;
+- loopback-only CLI and container API defaults, explicit rejection of non-loopback binds unless the
+  operator supplies `--allow-unsafe-remote`, and app-level non-loopback client rejection unless remote
+  evaluation was explicitly enabled;
+- `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+  `Referrer-Policy: no-referrer` on web-adapter responses;
 - unit-of-work transactions that commit governed internal state mutations and their audit events together;
 - transactional SQLite audit sequencing with a hash-linked event chain;
 - deterministic source-content/provenance impact scans with latest review context;
 - GitHub evidence reads restricted to an explicit repository/file, fixed API origin, GET-only client,
-  no redirect following, environment-only token input, race-free repository commit pinning,
-  file-level version/freshness derivation, decoded-byte Git blob verification and explicit source
-  approval.
+  no redirect following, no ambient proxy/`.netrc` environment discovery, environment-only token input,
+  race-free repository commit pinning, file-level version/freshness derivation, decoded-byte Git blob
+  verification and explicit source approval;
+- Ruff security rules, custom AST/secret checks, dependency auditing and CodeQL Python analysis in CI.
 
 ## Risk register
 
@@ -64,21 +73,30 @@ TrustFlow treats questionnaires and evidence files as untrusted input and extern
 | Audit omission | Source, questionnaire, draft or review state commits but the matching audit append fails | Commit governed state and matching audit events in one store transaction; inject audit failures and assert rollback |
 | Unsupported claim | Generator invents an answer | Evidence-only generation; unsupported-answer metric |
 | Source mutation | Export overwrites or partially corrupts input | Bind locations to source digest; reject source destination; atomic no-overwrite commit |
-| Provenance drift | Source owner, URI, classification, freshness, validity or other metadata changes without content/version change | Bind exact non-content source metadata to a canonical provenance digest; invalidate dependent evidence on drift |
+| Provenance drift | Source owner, URI, classification, freshness, validity, applicability or other metadata changes without content/version change | Bind exact non-content source metadata to a canonical provenance digest; invalidate dependent evidence on drift |
 | Stale evidence | Old policy remains approved | Version/freshness metadata and impact scans |
 | Conflicting evidence | Disagreeing sources produce confident output | Conservative conflict status and human review |
 | API file disclosure | Remote caller reads server-local paths | Multipart upload only; generated storage names; response redaction |
+| Accidental API exposure | An unauthenticated write API binds to a public interface | Loopback CLI/container defaults; CLI remote-bind refusal; app-level non-loopback rejection; explicit unsafe opt-in only |
+| Browser-side response retention | Sensitive API data is cached or framed | `no-store`, `nosniff`, frame denial and no-referrer response headers |
+| Reverse-proxy boundary confusion | A remote caller appears loopback because a local proxy terminates the connection | Do not treat local-only checks as authentication; remote hosting remains unsupported until a real identity/trust-proxy model exists |
 | Audit race/tampering | Sequence or history becomes inconsistent | Transactional append, hash chain, concurrency/tamper tests |
 | Prompt injection in evidence | Source text attempts to alter system policy | Treat source text strictly as evidence, never executable instruction |
-| GitHub credential leakage | Token appears in CLI history, stored source, error body or redirect target | Environment-only token, token-free source/audit metadata, sanitized errors, redirects disabled |
+| GitHub credential leakage | Token appears in CLI history, stored source, error body, redirect target or implicit proxy path | Environment-only token, token-free source/audit metadata, sanitized errors, redirects disabled, ambient HTTPX environment discovery disabled |
 | GitHub overreach | Connector browses or mutates more repository data than intended | Exact repository/file locator; three scoped GETs for ref resolution, exact-file fetch and path history; operator-provided read-only repository credential |
 | GitHub payload inconsistency | Decoded file bytes do not correspond to the content API's reported Git object | Recompute the Git blob object identity over decoded bytes and fail closed on mismatch |
 | False GitHub freshness | Unrelated repository commits make unchanged evidence look newer or changed | Derive `version` and `updated_at` from the latest commit that touched the exact path, while using the resolved repository commit only to pin the fetch |
 | Unattested GitHub freshness | Repository commit time is treated as independent proof of policy/control validity | Label commit time as source provenance only; require authoritative source-specific validity semantics for higher-assurance freshness claims |
+| Static-analysis blind spot | A code vulnerability is not caught by custom AST/lint checks | Run CodeQL security-extended analysis in addition to Ruff/custom scans and dependency audit; keep results as engineering evidence, not a vulnerability-free guarantee |
 | Cross-tenant leakage | Future hosted search mixes tenants | Tenant isolation must exist before multi-tenant hosting |
+| Unprotected main governance | CI can be bypassed administratively because no repository ruleset is configured | Record as release-governance residual; enable repository-level rules/branch protection before stable release if supported by hosting/account policy |
 
 ## Residual risk
 
-TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or connector credential-management system. The GitHub adapter cannot prove that the supplied credential is least-privileged, correctly governed by organization SSO, or rotated appropriately; those remain deployment responsibilities. Git commit timestamps are repository-supplied provenance and are not independent evidence of operational validity. Reviewer values are caller-supplied labels rather than authenticated identities. Exported filesystem artifacts and SQLite audit records remain separate resources without a distributed transaction or recovery journal. The optional API does not provide the production controls listed in `SECURITY.md`.
+TrustFlow does not include an OCR sandbox, malware engine, hosted identity layer, tenant-isolation layer, external audit anchor or connector credential-management system. The GitHub adapter cannot prove that the supplied credential is least-privileged, correctly governed by organization SSO, or rotated appropriately; those remain deployment responsibilities. Git commit timestamps are repository-supplied provenance and are not independent evidence of operational validity. Reviewer values are caller-supplied labels rather than authenticated identities. Exported filesystem artifacts and SQLite audit records remain separate resources without a distributed transaction or recovery journal.
+
+The optional API still has no authentication, authorization, rate limiting, DLP or tenant isolation. Its local-only checks reduce accidental exposure; they do not make remote hosting safe, and a local reverse proxy can alter the apparent network boundary. `--allow-unsafe-remote` is deliberately named as an unsafe evaluation escape hatch rather than a security feature.
+
+The GitHub connector deliberately ignores ambient proxy settings; deployments that require a proxy currently need an explicit future transport contract rather than relying on process environment variables. Repository dependency resolution is range-based rather than lockfile-reproducible. CodeQL and other CI security scanners can miss vulnerabilities. Repository rulesets are currently absent and cannot be configured through the available connector write surface in this workflow.
 
 These are explicit release boundaries, not implied future guarantees. See [limitations](limitations.md).

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated
 
@@ -22,6 +23,16 @@ def _version(value: bool) -> None:
     if value:
         console.print(f"trustflow {__version__}")
         raise typer.Exit()
+
+
+def _is_loopback_host(host: str) -> bool:
+    candidate = host.strip().removeprefix("[").removesuffix("]")
+    if candidate.casefold() == "localhost":
+        return True
+    try:
+        return ip_address(candidate).is_loopback
+    except ValueError:
+        return False
 
 
 @app.callback()
@@ -198,6 +209,16 @@ def serve(
     upload_dir: Annotated[Path, typer.Option()] = Path(".trustflow/uploads"),
     host: Annotated[str, typer.Option()] = "127.0.0.1",
     port: Annotated[int, typer.Option(min=1, max=65535)] = 8081,
+    allow_unsafe_remote: Annotated[
+        bool,
+        typer.Option(
+            "--allow-unsafe-remote",
+            help=(
+                "Explicitly allow the unauthenticated evaluation API on a non-loopback host. "
+                "Do not use for production."
+            ),
+        ),
+    ] = False,
 ) -> None:
     try:
         import uvicorn
@@ -206,4 +227,22 @@ def serve(
     except ImportError as exc:
         raise typer.BadParameter("Install with: pip install 'trustflow[web]'") from exc
 
-    uvicorn.run(create_app(database=database, upload_dir=upload_dir), host=host, port=port)
+    if not _is_loopback_host(host) and not allow_unsafe_remote:
+        raise typer.BadParameter(
+            "non-loopback API binding is disabled; use --allow-unsafe-remote only for "
+            "explicitly controlled evaluation"
+        )
+    if allow_unsafe_remote:
+        console.print(
+            "[bold red]WARNING:[/bold red] remote API access is unauthenticated and evaluation-only"
+        )
+
+    uvicorn.run(
+        create_app(
+            database=database,
+            upload_dir=upload_dir,
+            allow_remote=allow_unsafe_remote,
+        ),
+        host=host,
+        port=port,
+    )

@@ -128,6 +128,7 @@ class GitHubEvidenceSource:
             },
             timeout=httpx.Timeout(15.0),
             follow_redirects=False,
+            trust_env=False,
             transport=transport,
         )
 
