@@ -53,8 +53,7 @@ def _sources() -> list[SourceDocument]:
 
 def _questions() -> list[str]:
     return [
-        "How does control "
-        f"{index % 16} protect customer data with encryption and access review?"
+        f"How does control {index % 16} protect customer data with encryption and access review?"
         for index in range(QUESTION_COUNT)
     ]
 
