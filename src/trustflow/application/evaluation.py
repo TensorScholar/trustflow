@@ -72,6 +72,7 @@ def evaluate_adversarial_cases(
             sensitivity=case.question.sensitivity,
             policy=policy,
             now=case.evaluated_at,
+            question=case.question.text,
         )
 
         actual_source_ids = {item.source_id for item in evidence}
