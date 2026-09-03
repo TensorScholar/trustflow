@@ -144,7 +144,6 @@ def test_adversarial_release_gate_detects_metric_regression(service) -> None:
         update={"draft": report.draft.model_copy(update={"citation_precision": 0.5})}
     )
 
-    assert (
-        "citation_precision=0.500000;expected=1.000000"
-        in adversarial_report_violations(degraded)
+    assert "citation_precision=0.500000;expected=1.000000" in adversarial_report_violations(
+        degraded
     )
