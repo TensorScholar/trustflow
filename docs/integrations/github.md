@@ -20,6 +20,8 @@ export TRUSTFLOW_GITHUB_TOKEN='...'
 
 Use a repository-scoped credential with read-only access to repository contents. TrustFlow does not request or perform repository writes. The token is sent only as an `Authorization` header to the fixed `https://api.github.com` origin, is never accepted as a CLI argument, is not copied into `SourceDocument`, and is not written to the audit payload.
 
+The connector also disables HTTPX environment discovery (`trust_env=False`). `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `.netrc`, and ambient certificate/proxy process configuration therefore cannot silently change the connector's credential path. Environments that legitimately require an outbound proxy need a future explicit, reviewable proxy/transport contract rather than implicit process state.
+
 Credential issuance, rotation, revocation, organization policy, SSO enforcement, and proof that an operator chose least privilege remain deployment responsibilities.
 
 ## Ingest one file
@@ -59,6 +61,7 @@ The adapter:
 - accepts only an explicit `owner/name` repository and explicit relative file path;
 - rejects traversal, backslashes, control characters, directories and non-file entries;
 - does not follow HTTP redirects;
+- ignores ambient HTTP(S) proxy and `.netrc` environment discovery;
 - uses GET requests only against the fixed GitHub API origin;
 - accepts inline base64 file content only;
 - validates Git object identifiers and API response shapes;
@@ -72,7 +75,7 @@ The connector does not execute repository content. Retrieved text remains untrus
 
 ## Validation status
 
-Pull-request CI uses a deterministic mocked GitHub HTTP transport to exercise request shape, immutable fetch pinning, file-level version/freshness semantics, unrelated-repository-commit stability, blob-identity verification, credential non-persistence, redirect handling, malformed responses, unsafe locators, size limits, binary content, and approval semantics.
+Pull-request CI uses a deterministic mocked GitHub HTTP transport to exercise request shape, immutable fetch pinning, file-level version/freshness semantics, unrelated-repository-commit stability, blob-identity verification, credential non-persistence, redirect handling, malformed responses, unsafe locators, size limits, binary content, approval semantics, and ambient-proxy isolation.
 
 After a change reaches `main`, CI also runs a real read-only smoke test against this repository's `SECURITY.md` using the ephemeral GitHub Actions token with `contents: read`. The smoke test exercises the real GitHub API, exact-file fetch, file-history lookup, immutable source URI, and default-unapproved behavior. It is deliberately not run for pull-request-controlled code with a runtime token.
 
