@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import base64
+import hashlib
 import json
 import sqlite3
 import tempfile
-import zlib
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -27,7 +26,7 @@ from trustflow.web.app import (
     create_app,
 )
 
-CONTRACT_PATH = Path("compatibility/v0.1-contract.json")
+CONTRACT_LOCK_PATH = Path("compatibility/v0.1-contract.json")
 
 
 def _json_value(value: Any) -> Any:
@@ -178,11 +177,21 @@ def canonical_bytes(contract: dict[str, object]) -> bytes:
     return (json.dumps(contract, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode()
 
 
-def _bootstrap_payload(content: bytes) -> str:
-    return base64.b64encode(zlib.compress(content, level=9)).decode("ascii")
+def contract_lock(content: bytes) -> dict[str, object]:
+    return {
+        "canonical_bytes": len(content),
+        "contract_schema": 1,
+        "release_line": "0.1",
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
 
 
-def _write_contract(path: Path, content: bytes) -> None:
+def _write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_bytes(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
 
@@ -193,35 +202,39 @@ def main() -> None:
     output_group.add_argument(
         "--write",
         action="store_true",
-        help="Explicitly replace the frozen contract baseline with the current surface.",
+        help="Explicitly replace the frozen contract lock with the current canonical digest.",
     )
     output_group.add_argument(
         "--emit",
         type=Path,
-        help="Write the current canonical contract to a review artifact without changing baseline.",
+        help="Write the full current canonical contract to a review artifact without changing lock.",
     )
     args = parser.parse_args()
 
     current = canonical_bytes(build_contract())
+    current_lock = contract_lock(current)
     if args.write:
-        _write_contract(CONTRACT_PATH, current)
-        print(f"wrote {CONTRACT_PATH}")
+        _write_json(CONTRACT_LOCK_PATH, current_lock)
+        print(f"wrote {CONTRACT_LOCK_PATH}")
         return
     if args.emit is not None:
-        _write_contract(args.emit, current)
+        _write_bytes(args.emit, current)
         print(f"emitted {args.emit}")
         return
 
-    if not CONTRACT_PATH.is_file():
-        print(f"CONTRACT_BASE64_ZLIB={_bootstrap_payload(current)}")
-        raise SystemExit(f"missing frozen contract: {CONTRACT_PATH}")
+    if not CONTRACT_LOCK_PATH.is_file():
+        print(json.dumps(current_lock, sort_keys=True))
+        raise SystemExit(f"missing frozen contract lock: {CONTRACT_LOCK_PATH}")
 
-    expected = CONTRACT_PATH.read_bytes()
-    if expected != current:
-        print(f"CONTRACT_BASE64_ZLIB={_bootstrap_payload(current)}")
+    try:
+        expected_lock = json.loads(CONTRACT_LOCK_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"invalid frozen contract lock: {CONTRACT_LOCK_PATH}") from exc
+    if expected_lock != current_lock:
+        print(json.dumps(current_lock, sort_keys=True))
         raise SystemExit(
-            "v0.1 compatibility surface drifted; inspect the change and update the frozen contract "
-            "only when the interface change is intentional"
+            "v0.1 compatibility surface drifted; inspect the emitted contract artifact and update "
+            "the frozen lock only when the interface change is intentional"
         )
     print("v0.1 compatibility contract verified")
 
