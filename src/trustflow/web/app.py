@@ -122,6 +122,16 @@ def create_app(
         except TrustFlowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/questionnaires/{identifier}/revalidate")
+    def revalidate(identifier: str, source_id: str | None = None) -> list[dict[str, object]]:
+        try:
+            return [
+                item.model_dump(mode="json")
+                for item in service.revalidate(identifier, source_id=source_id)
+            ]
+        except TrustFlowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/answers/{identifier}/review")
     def review(identifier: str, request: ReviewRequest) -> dict[str, object]:
         try:
@@ -137,6 +147,16 @@ def create_app(
 
     @app.get("/questionnaires/{identifier}/metrics")
     def metrics(identifier: str) -> dict[str, float | int]:
-        return service.metrics(identifier)
+        try:
+            return service.metrics(identifier)
+        except TrustFlowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/questionnaires/{identifier}/governance-metrics")
+    def governance_metrics(identifier: str) -> dict[str, float | int]:
+        try:
+            return service.governance_metrics(identifier)
+        except TrustFlowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return app

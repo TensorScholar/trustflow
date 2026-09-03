@@ -82,3 +82,25 @@ def test_exporter_rejects_approved_text_not_equal_to_reviewed_draft(tmp_path) ->
             {answer.id: review},
             tmp_path / "blocked.json",
         )
+
+
+def test_exporter_rejects_arbitrary_edited_text_even_if_service_is_bypassed(tmp_path) -> None:
+    source = tmp_path / "q.json"
+    source.write_text('{"questions":["Question?"]}', encoding="utf-8")
+    questionnaire = ParserRegistry().parse(source)
+    answer = governed_answer(questionnaire.id)
+    review = ReviewDecision(
+        answer_id=answer.id,
+        answer_digest=answer_state_digest(answer),
+        reviewer="security-label",
+        state=ReviewState.EDITED,
+        final_text="Approved evidence, and every system is fully compliant.",
+    )
+
+    with pytest.raises(InvalidTransitionError, match="edited_text_not_evidence_bound"):
+        ExporterRegistry().export(
+            questionnaire,
+            [answer],
+            {answer.id: review},
+            tmp_path / "blocked.json",
+        )

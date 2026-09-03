@@ -76,10 +76,10 @@ def test_review(service, tmp_path) -> None:
     review = service.review(
         answer.id,
         reviewer="security@example.com",
-        state=ReviewState.EDITED,
-        final_text="Yes. Customer data is encrypted at rest with AES-256.",
+        state=ReviewState.APPROVED,
+        final_text=answer.text,
     )
-    assert review.final_text.startswith("Yes")
+    assert review.final_text == answer.text
     assert review.answer_digest == answer_state_digest(answer)
 
 

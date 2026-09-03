@@ -194,6 +194,29 @@ def impact_scan(
     console.print_json(data=[item.model_dump(mode="json") for item in service.impact_scan()])
 
 
+@app.command("revalidate")
+def revalidate_questionnaire(
+    database: Annotated[Path, typer.Option(exists=True, readable=True)],
+    questionnaire_id: Annotated[str, typer.Argument()],
+    source_id: Annotated[
+        str | None,
+        typer.Option(help="Limit revalidation to impacts caused by one source identifier."),
+    ] = None,
+) -> None:
+    service = build_service(database)
+    answers = service.revalidate(questionnaire_id, source_id=source_id)
+    console.print_json(data=[item.model_dump(mode="json") for item in answers])
+
+
+@app.command("governance-metrics")
+def governance_metrics(
+    database: Annotated[Path, typer.Option(exists=True, readable=True)],
+    questionnaire_id: Annotated[str, typer.Argument()],
+) -> None:
+    service = build_service(database)
+    console.print_json(data=service.governance_metrics(questionnaire_id))
+
+
 @app.command("verify-audit")
 def verify_audit(
     database: Annotated[Path, typer.Argument(exists=True, readable=True)],
