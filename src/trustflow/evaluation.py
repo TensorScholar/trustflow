@@ -87,9 +87,13 @@ def load_adversarial_corpus() -> AdversarialCorpus:
             continue
         original = draft_by_id.get(case.duplicate_of)
         if original is None:
-            raise ValueError(f"duplicate case {case.id} references missing case {case.duplicate_of}")
+            raise ValueError(
+                f"duplicate case {case.id} references missing case {case.duplicate_of}"
+            )
         if original.question != case.question:
-            raise ValueError(f"duplicate case {case.id} does not preserve the original question text")
+            raise ValueError(
+                f"duplicate case {case.id} does not preserve the original question text"
+            )
 
     return corpus
 
@@ -157,9 +161,7 @@ def run_adversarial_corpus(
         policy=active_policy,
     )
     revalidation_failures = _evaluate_revalidation_cases(corpus, active_policy)
-    failed_case_ids = tuple(
-        dict.fromkeys((*draft_summary.failed_case_ids, *revalidation_failures))
-    )
+    failed_case_ids = tuple(dict.fromkeys((*draft_summary.failed_case_ids, *revalidation_failures)))
     return AdversarialEvaluationReport(
         evaluated_at=corpus.evaluated_at,
         total_cases=len(corpus.draft_cases) + len(corpus.revalidation_cases),
