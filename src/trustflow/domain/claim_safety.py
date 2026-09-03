@@ -129,7 +129,7 @@ def source_matches_claim_scope(
         if (
             normalized_requested
             and normalized_declared
-            and normalized_requested.isdisjoint(normalized_declared)
+            and not normalized_requested <= normalized_declared
         ):
             return False
     return True
