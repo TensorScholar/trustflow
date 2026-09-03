@@ -22,7 +22,7 @@ from trustflow.domain.models import (
     SourceDocument,
 )
 from trustflow.domain.policy import decide_status
-from trustflow.domain.retrieval import retrieve
+from trustflow.domain.retrieval import PreparedSource, prepare_sources, retrieve, retrieve_prepared
 from trustflow.domain.review import answer_state_digest, review_binding_error
 from trustflow.ports.interfaces import (
     AnswerGenerator,
@@ -96,11 +96,11 @@ class TrustFlowService:
         *,
         questionnaire_id: str,
         question: Question,
-        sources: list[SourceDocument],
+        sources: tuple[PreparedSource, ...],
         answer_id: str | None = None,
         source_change_revalidation: bool = False,
     ) -> DraftAnswer:
-        evidence = retrieve(question.text, sources, self.policy)
+        evidence = retrieve_prepared(question.text, sources, self.policy)
         text, confidence = self.generator.generate(
             question=question.text,
             evidence=evidence,
@@ -136,7 +136,7 @@ class TrustFlowService:
             raise NotFoundError(f"questionnaire not found: {questionnaire_id}")
         if self.store.list_answers(questionnaire_id):
             raise InvalidTransitionError("questionnaire has already been drafted")
-        sources = self.store.list_sources()
+        sources = prepare_sources(self.store.list_sources())
         answers = [
             self._draft_answer(
                 questionnaire_id=questionnaire.id,
@@ -399,7 +399,7 @@ class TrustFlowService:
             return []
 
         questions = {question.id: question for question in questionnaire.questions}
-        sources = list(current.values())
+        sources = prepare_sources(list(current.values()))
         refreshed: list[DraftAnswer] = []
         with self.store.transaction() as transaction:
             for previous in answers:
