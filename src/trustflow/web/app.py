@@ -1,18 +1,26 @@
 import logging
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
 from trustflow._version import __version__
 from trustflow.application.bootstrap import build_service
 from trustflow.domain.errors import TrustFlowError, UnsafeDocumentError
-from trustflow.domain.models import Questionnaire, ReviewState, SourceDocument
+from trustflow.domain.models import (
+    DocumentFormat,
+    DraftAnswer,
+    Question,
+    Questionnaire,
+    ReviewDecision,
+    ReviewState,
+    SourceDocument,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +34,55 @@ class ReviewRequest(BaseModel):
     note: str = Field(default="", max_length=20_000)
 
 
-def _public_questionnaire(item: Questionnaire) -> dict[str, object]:
+class HealthResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ok"] = "ok"
+
+
+class QuestionnaireResponse(BaseModel):
+    """Public questionnaire representation that never exposes the server-side source path."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    source_digest: str
+    format: DocumentFormat
+    questions: tuple[Question, ...]
+    imported_at: AwareDatetime
+
+
+class MetricsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answers: int
+    auto_answer_rate: float
+    review_rate: float
+    evidence_coverage: float
+    unanswerable_rate: float
+
+
+class GovernanceMetricsResponse(MetricsResponse):
+    current_evidence_rate: float
+    external_claim_ready_rate: float
+    external_claim_blocked_rate: float
+    review_required_answers: int
+    review_completed_answers: int
+    review_completion_rate: float
+    reviewer_edit_rate: float
+    revalidation_required_answers: int
+    revalidation_required_rate: float
+    impact_findings: int
+    time_to_first_draft_seconds: float
+    review_turnaround_samples: int
+    median_review_turnaround_seconds: float
+
+
+def _public_questionnaire(item: Questionnaire) -> QuestionnaireResponse:
     payload = item.model_dump(mode="json")
     payload.pop("source_path", None)
-    return payload
+    return QuestionnaireResponse.model_validate(payload)
 
 
 def _is_loopback_client(host: str | None) -> bool:
@@ -76,22 +129,22 @@ def create_app(
         response = await call_next(request)
         return _apply_security_headers(response)
 
-    @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    @app.get("/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse()
 
-    @app.post("/sources")
-    def source(item: SourceDocument) -> dict[str, object]:
+    @app.post("/sources", response_model=SourceDocument)
+    def source(item: SourceDocument) -> SourceDocument:
         try:
             service.ingest_source(item)
-            return item.model_dump(mode="json")
+            return item
         except TrustFlowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.post("/questionnaires/import")
+    @app.post("/questionnaires/import", response_model=QuestionnaireResponse)
     async def import_questionnaire(
         file: Annotated[UploadFile, File(description="Questionnaire file")],
-    ) -> dict[str, object]:
+    ) -> QuestionnaireResponse:
         original_name = Path(file.filename or "questionnaire").name
         suffix = Path(original_name).suffix.casefold()
         destination = upload_root / f"{uuid4().hex}{suffix}"
@@ -115,25 +168,22 @@ def create_app(
         finally:
             await file.close()
 
-    @app.post("/questionnaires/{identifier}/draft")
-    def draft(identifier: str) -> list[dict[str, object]]:
+    @app.post("/questionnaires/{identifier}/draft", response_model=list[DraftAnswer])
+    def draft(identifier: str) -> list[DraftAnswer]:
         try:
-            return [item.model_dump(mode="json") for item in service.draft(identifier)]
+            return service.draft(identifier)
         except TrustFlowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.post("/questionnaires/{identifier}/revalidate")
-    def revalidate(identifier: str, source_id: str | None = None) -> list[dict[str, object]]:
+    @app.post("/questionnaires/{identifier}/revalidate", response_model=list[DraftAnswer])
+    def revalidate(identifier: str, source_id: str | None = None) -> list[DraftAnswer]:
         try:
-            return [
-                item.model_dump(mode="json")
-                for item in service.revalidate(identifier, source_id=source_id)
-            ]
+            return service.revalidate(identifier, source_id=source_id)
         except TrustFlowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.post("/answers/{identifier}/review")
-    def review(identifier: str, request: ReviewRequest) -> dict[str, object]:
+    @app.post("/answers/{identifier}/review", response_model=ReviewDecision)
+    def review(identifier: str, request: ReviewRequest) -> ReviewDecision:
         try:
             return service.review(
                 identifier,
@@ -141,21 +191,24 @@ def create_app(
                 state=request.state,
                 final_text=request.final_text,
                 note=request.note,
-            ).model_dump(mode="json")
+            )
         except TrustFlowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/questionnaires/{identifier}/metrics")
-    def metrics(identifier: str) -> dict[str, float | int]:
+    @app.get("/questionnaires/{identifier}/metrics", response_model=MetricsResponse)
+    def metrics(identifier: str) -> MetricsResponse:
         try:
-            return service.metrics(identifier)
+            return MetricsResponse.model_validate(service.metrics(identifier))
         except TrustFlowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/questionnaires/{identifier}/governance-metrics")
-    def governance_metrics(identifier: str) -> dict[str, float | int]:
+    @app.get(
+        "/questionnaires/{identifier}/governance-metrics",
+        response_model=GovernanceMetricsResponse,
+    )
+    def governance_metrics(identifier: str) -> GovernanceMetricsResponse:
         try:
-            return service.governance_metrics(identifier)
+            return GovernanceMetricsResponse.model_validate(service.governance_metrics(identifier))
         except TrustFlowError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
