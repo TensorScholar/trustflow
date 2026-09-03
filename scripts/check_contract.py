@@ -65,15 +65,16 @@ def _click_param(param: click.Parameter) -> dict[str, object]:
 
 def _cli_contract() -> dict[str, object]:
     command = get_command(cli_app)
-    if not isinstance(command, click.Group):
-        raise RuntimeError("TrustFlow CLI root is not a Click group")
+    commands = getattr(command, "commands", None)
+    if not isinstance(commands, dict):
+        raise RuntimeError("TrustFlow CLI root does not expose a command mapping")
     return {
         "root_params": [_click_param(param) for param in command.params],
         "commands": {
             name: {
                 "params": [_click_param(param) for param in child.params],
             }
-            for name, child in sorted(command.commands.items())
+            for name, child in sorted(commands.items())
         },
     }
 
