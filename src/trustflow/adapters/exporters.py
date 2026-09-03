@@ -362,9 +362,7 @@ class ExporterRegistry:
                             "applicability": {
                                 "products": sorted(item.applicability.products),
                                 "regions": sorted(item.applicability.regions),
-                                "deployment_models": sorted(
-                                    item.applicability.deployment_models
-                                ),
+                                "deployment_models": sorted(item.applicability.deployment_models),
                             },
                         }
                         for item in answer.evidence
