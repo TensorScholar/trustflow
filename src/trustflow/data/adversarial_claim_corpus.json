@@ -1,0 +1,313 @@
+{
+  "evaluated_at": "2026-09-01T12:00:00Z",
+  "sources": [
+    {
+      "id": "prod-db",
+      "title": "Production database encryption statement",
+      "owner": "security",
+      "version": "8",
+      "content": "Cloud production databases are encrypted at rest with AES-256.",
+      "source_uri": "evidence://prod-db/v8",
+      "approved": true,
+      "updated_at": "2026-08-15T09:00:00Z",
+      "tags": ["cloud", "production", "database", "encryption"]
+    },
+    {
+      "id": "legacy-keys-stale",
+      "title": "Legacy administrator key policy",
+      "owner": "security",
+      "version": "2",
+      "content": "Legacy administrator access keys are rotated every 90 days.",
+      "source_uri": "evidence://legacy-keys/v2",
+      "approved": true,
+      "updated_at": "2024-01-10T09:00:00Z",
+      "tags": ["legacy", "keys", "rotation"]
+    },
+    {
+      "id": "audit-retention-yes",
+      "title": "Audit retention policy",
+      "owner": "security",
+      "version": "4",
+      "content": "We retain audit logs for 365 days.",
+      "source_uri": "evidence://audit-retention/yes",
+      "approved": true,
+      "updated_at": "2026-08-10T09:00:00Z",
+      "tags": ["audit", "logs", "retention"]
+    },
+    {
+      "id": "audit-retention-no",
+      "title": "Conflicting audit retention statement",
+      "owner": "security",
+      "version": "1",
+      "content": "We do not retain audit logs for 365 days.",
+      "source_uri": "evidence://audit-retention/no",
+      "approved": true,
+      "updated_at": "2026-08-11T09:00:00Z",
+      "tags": ["audit", "logs", "retention"]
+    },
+    {
+      "id": "file-rest-only",
+      "title": "File encryption scope",
+      "owner": "security",
+      "version": "3",
+      "content": "Customer files are encrypted at rest.",
+      "source_uri": "evidence://files/rest-only",
+      "approved": true,
+      "updated_at": "2026-08-12T09:00:00Z",
+      "tags": ["customer", "files", "encryption", "rest"]
+    },
+    {
+      "id": "cloud-product",
+      "title": "Cloud product encryption statement",
+      "owner": "security",
+      "version": "5",
+      "content": "Cloud product customer data is encrypted at rest.",
+      "source_uri": "evidence://product/cloud",
+      "approved": true,
+      "updated_at": "2026-08-13T09:00:00Z",
+      "tags": ["cloud", "product", "customer", "data", "encryption"]
+    },
+    {
+      "id": "eu-region",
+      "title": "EU regional encryption statement",
+      "owner": "security",
+      "version": "7",
+      "content": "Customer data in the EU region is encrypted at rest.",
+      "source_uri": "evidence://region/eu",
+      "approved": true,
+      "updated_at": "2026-08-14T09:00:00Z",
+      "tags": ["eu", "region", "customer", "data", "encryption"]
+    },
+    {
+      "id": "managed-saas",
+      "title": "Managed SaaS encryption statement",
+      "owner": "security",
+      "version": "6",
+      "content": "Managed SaaS deployment customer data is encrypted at rest.",
+      "source_uri": "evidence://deployment/managed-saas",
+      "approved": true,
+      "updated_at": "2026-08-14T10:00:00Z",
+      "tags": ["managed", "saas", "deployment", "encryption"]
+    },
+    {
+      "id": "legal-contract",
+      "title": "Indemnity review policy",
+      "owner": "legal",
+      "version": "9",
+      "content": "Indemnity terms are defined in the governing customer contract and require legal review.",
+      "source_uri": "evidence://legal/indemnity",
+      "approved": true,
+      "updated_at": "2026-08-16T09:00:00Z",
+      "tags": ["indemnity", "contract", "legal"]
+    },
+    {
+      "id": "revoked-subprocessors",
+      "title": "Revoked subprocessor statement",
+      "owner": "privacy",
+      "version": "2",
+      "content": "The service uses Example Analytics as a subprocessor.",
+      "source_uri": "evidence://privacy/subprocessors",
+      "approved": false,
+      "updated_at": "2026-08-12T09:00:00Z",
+      "tags": ["subprocessor", "analytics"]
+    }
+  ],
+  "draft_cases": [
+    {
+      "id": "supported-production-db",
+      "scenario": "supported",
+      "question": "Do you encrypt production databases at rest?",
+      "sensitivity": "standard",
+      "expected_status": "answered",
+      "expected_source_ids": ["prod-db"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["prod-db"],
+      "allow_auto_answer": true
+    },
+    {
+      "id": "stale-legacy-keys",
+      "scenario": "stale",
+      "question": "Do you rotate legacy administrator access keys?",
+      "sensitivity": "standard",
+      "expected_status": "stale",
+      "expected_source_ids": ["legacy-keys-stale"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["legacy-keys-stale"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "conflicting-audit-retention",
+      "scenario": "conflicting",
+      "question": "Do you retain audit logs for 365 days?",
+      "sensitivity": "standard",
+      "expected_status": "conflict",
+      "expected_source_ids": ["audit-retention-yes", "audit-retention-no"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["audit-retention-yes", "audit-retention-no"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "partial-rest-and-transit",
+      "scenario": "partially_supported",
+      "question": "Are customer files encrypted both at rest and in transit?",
+      "sensitivity": "standard",
+      "expected_status": "review_required",
+      "expected_source_ids": ["file-rest-only"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["file-rest-only"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "overbroad-all-data-everywhere",
+      "scenario": "overbroad_claim",
+      "question": "Is all customer data encrypted everywhere?",
+      "sensitivity": "standard",
+      "expected_status": "review_required",
+      "expected_source_ids": ["prod-db"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["prod-db"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "wrong-product-onprem",
+      "scenario": "wrong_product_scope",
+      "question": "Does the OnPrem product encrypt customer data at rest?",
+      "sensitivity": "standard",
+      "expected_status": "unanswerable",
+      "expected_source_ids": [],
+      "forbidden_source_ids": ["cloud-product"],
+      "candidate_source_ids": ["cloud-product"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "wrong-region-us",
+      "scenario": "wrong_region",
+      "question": "Is customer data in the US region encrypted at rest?",
+      "sensitivity": "standard",
+      "expected_status": "unanswerable",
+      "expected_source_ids": [],
+      "forbidden_source_ids": ["eu-region"],
+      "candidate_source_ids": ["eu-region"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "wrong-deployment-customer-managed",
+      "scenario": "wrong_deployment_model",
+      "question": "Is customer data encrypted at rest in customer-managed deployments?",
+      "sensitivity": "standard",
+      "expected_status": "unanswerable",
+      "expected_source_ids": [],
+      "forbidden_source_ids": ["managed-saas"],
+      "candidate_source_ids": ["managed-saas"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "no-evidence-data-residency",
+      "scenario": "no_evidence",
+      "question": "Can customers require data residency in Antarctica?",
+      "sensitivity": "standard",
+      "expected_status": "unanswerable",
+      "expected_source_ids": [],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": [],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "human-edit-indemnity",
+      "scenario": "human_edit_required",
+      "question": "What indemnity commitment applies to this customer contract?",
+      "sensitivity": "legal",
+      "expected_status": "review_required",
+      "expected_source_ids": ["legal-contract"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["legal-contract"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "sensitive-encryption-claim",
+      "scenario": "sensitive_claim",
+      "question": "Do you encrypt production databases at rest?",
+      "sensitivity": "security",
+      "expected_status": "review_required",
+      "expected_source_ids": ["prod-db"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["prod-db"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "revoked-subprocessor",
+      "scenario": "evidence_revoked",
+      "question": "Do you use Example Analytics as a subprocessor?",
+      "sensitivity": "privacy",
+      "expected_status": "unanswerable",
+      "expected_source_ids": [],
+      "forbidden_source_ids": ["revoked-subprocessors"],
+      "candidate_source_ids": ["revoked-subprocessors"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "ambiguous-secure",
+      "scenario": "question_ambiguous",
+      "question": "Is customer data secure?",
+      "sensitivity": "standard",
+      "expected_status": "review_required",
+      "expected_source_ids": ["cloud-product"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["cloud-product"],
+      "allow_auto_answer": false
+    },
+    {
+      "id": "duplicate-production-db",
+      "scenario": "duplicate_question",
+      "question": "Do you encrypt production databases at rest?",
+      "duplicate_of": "supported-production-db",
+      "sensitivity": "standard",
+      "expected_status": "answered",
+      "expected_source_ids": ["prod-db"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["prod-db"],
+      "allow_auto_answer": true
+    },
+    {
+      "id": "contradictory-encryption-question",
+      "scenario": "contradictory_question",
+      "question": "Do you encrypt customer data at rest while also not encrypting customer data at rest?",
+      "sensitivity": "standard",
+      "expected_status": "review_required",
+      "expected_source_ids": ["cloud-product"],
+      "forbidden_source_ids": [],
+      "candidate_source_ids": ["cloud-product"],
+      "allow_auto_answer": false
+    }
+  ],
+  "revalidation_cases": [
+    {
+      "id": "source-version-changed",
+      "scenario": "source_version_changed",
+      "question": "Do you encrypt production databases at rest?",
+      "expected_reason": "source_version_changed",
+      "snapshot_source": {
+        "id": "versioned-db-policy",
+        "title": "Versioned database policy",
+        "owner": "security",
+        "version": "8",
+        "content": "Production databases are encrypted at rest with AES-256.",
+        "source_uri": "evidence://versioned-db/v8",
+        "approved": true,
+        "updated_at": "2026-08-01T09:00:00Z",
+        "tags": ["production", "database", "encryption"]
+      },
+      "current_source": {
+        "id": "versioned-db-policy",
+        "title": "Versioned database policy",
+        "owner": "security",
+        "version": "9",
+        "content": "Production databases are encrypted at rest with AES-256.",
+        "source_uri": "evidence://versioned-db/v8",
+        "approved": true,
+        "updated_at": "2026-08-01T09:00:00Z",
+        "tags": ["production", "database", "encryption"]
+      }
+    }
+  ]
+}
