@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from trustflow.adapters.generator import ExtractiveAnswerGenerator
-from trustflow.evaluation import run_adversarial_corpus
+from trustflow.evaluation import adversarial_report_violations, run_adversarial_corpus
 
 
 def main() -> None:
@@ -11,13 +11,15 @@ def main() -> None:
     parser.add_argument(
         "--require-clean",
         action="store_true",
-        help="Exit non-zero if any labeled case fails its safety expectation.",
+        help="Exit non-zero if any labeled case or release safety metric regresses.",
     )
     args = parser.parse_args()
 
     report = run_adversarial_corpus(generator=ExtractiveAnswerGenerator())
     print(report.model_dump_json(indent=2))
-    if args.require_clean and report.failed_case_ids:
+    if args.require_clean and (violations := adversarial_report_violations(report)):
+        for violation in violations:
+            print(f"adversarial gate violation: {violation}")
         raise SystemExit(2)
 
 
