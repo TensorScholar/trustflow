@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from trustflow.domain.models import ApplicabilityScope, Evidence
 
 _SCOPE_SEPARATOR = re.compile(r"[^a-z0-9]+")
+_SCOPE_NOISE = frozenset({"a", "an", "that", "the", "this"})
 _WORD = re.compile(r"[a-z0-9][a-z0-9_-]*", re.IGNORECASE)
 _NEGATION = re.compile(
     r"\b(no|not|never|cannot|can't|does not|do not|doesn't|without)\b",
@@ -60,7 +61,11 @@ def canonical_scope_value(value: str) -> str:
 
 
 def _canonical_values(values: Iterable[str]) -> frozenset[str]:
-    return frozenset(normalized for value in values if (normalized := canonical_scope_value(value)))
+    return frozenset(
+        normalized
+        for value in values
+        if (normalized := canonical_scope_value(value)) and normalized not in _SCOPE_NOISE
+    )
 
 
 def infer_claim_scope(question: str) -> ApplicabilityScope:
