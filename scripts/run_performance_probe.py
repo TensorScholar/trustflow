@@ -21,6 +21,7 @@ SOURCE_COUNT = 48
 PASSAGES_PER_SOURCE = 24
 QUESTION_COUNT = 160
 REPETITIONS = 3
+MINIMUM_SAME_PROCESS_SPEEDUP = 2.0
 FIXED_TIME = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 
 
@@ -127,11 +128,16 @@ def main() -> None:
         "cold_median_seconds": round(cold_median, 6),
         "prepared_median_seconds_including_build": round(prepared_median, 6),
         "same_process_speedup": round(speedup, 3),
+        "minimum_same_process_speedup": MINIMUM_SAME_PROCESS_SPEEDUP,
         "result_checksum": cold_checksum,
         "semantic_equivalence": True,
         "production_slo_claim": False,
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
+    if speedup < MINIMUM_SAME_PROCESS_SPEEDUP:
+        raise SystemExit(
+            "prepared retrieval fell below the conservative same-process performance guardrail"
+        )
 
 
 if __name__ == "__main__":
