@@ -551,7 +551,9 @@ class TrustFlowService:
         first_draft_seconds = (
             max(
                 0.0,
-                (min(event.occurred_at for event in draft_events) - questionnaire.imported_at).total_seconds(),
+                (
+                    min(event.occurred_at for event in draft_events) - questionnaire.imported_at
+                ).total_seconds(),
             )
             if draft_events
             else 0.0
