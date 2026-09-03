@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from trustflow.domain.models import PolicySettings, SourceDocument
+from trustflow.domain.models import ApplicabilityScope, PolicySettings, SourceDocument
 from trustflow.domain.retrieval import retrieve
 
 
@@ -58,3 +58,34 @@ def test_old_source_is_returned_for_explicit_stale_policy_gate() -> None:
         PolicySettings(maximum_source_age_days=30),
     )
     assert results[0].source_id == "x"
+
+
+def test_declared_product_mismatch_is_not_retrievable() -> None:
+    cloud = source(
+        "cloud",
+        "Cloud product customer data is encrypted at rest.",
+        applicability=ApplicabilityScope(products=frozenset({"cloud"})),
+    )
+    assert (
+        retrieve(
+            "Does the OnPrem product encrypt customer data at rest?",
+            [cloud],
+            PolicySettings(),
+        )
+        == ()
+    )
+
+
+def test_matching_region_scope_is_snapshotted_on_evidence() -> None:
+    eu = source(
+        "eu",
+        "Customer data in the EU region is encrypted at rest.",
+        applicability=ApplicabilityScope(regions=frozenset({"EU"})),
+    )
+    results = retrieve(
+        "Is customer data in the eu region encrypted at rest?",
+        [eu],
+        PolicySettings(),
+    )
+    assert results[0].source_id == "eu"
+    assert results[0].applicability == eu.applicability
