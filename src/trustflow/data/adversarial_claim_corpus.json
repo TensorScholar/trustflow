@@ -10,7 +10,10 @@
       "source_uri": "evidence://prod-db/v8",
       "approved": true,
       "updated_at": "2026-08-15T09:00:00Z",
-      "tags": ["cloud", "production", "database", "encryption"]
+      "tags": ["cloud", "production", "database", "encryption"],
+      "applicability": {
+        "products": ["cloud"]
+      }
     },
     {
       "id": "legacy-keys-stale",
@@ -65,7 +68,10 @@
       "source_uri": "evidence://product/cloud",
       "approved": true,
       "updated_at": "2026-08-13T09:00:00Z",
-      "tags": ["cloud", "product", "customer", "data", "encryption"]
+      "tags": ["cloud", "product", "customer", "data", "encryption"],
+      "applicability": {
+        "products": ["cloud"]
+      }
     },
     {
       "id": "eu-region",
@@ -76,7 +82,10 @@
       "source_uri": "evidence://region/eu",
       "approved": true,
       "updated_at": "2026-08-14T09:00:00Z",
-      "tags": ["eu", "region", "customer", "data", "encryption"]
+      "tags": ["eu", "region", "customer", "data", "encryption"],
+      "applicability": {
+        "regions": ["eu"]
+      }
     },
     {
       "id": "managed-saas",
@@ -87,7 +96,10 @@
       "source_uri": "evidence://deployment/managed-saas",
       "approved": true,
       "updated_at": "2026-08-14T10:00:00Z",
-      "tags": ["managed", "saas", "deployment", "encryption"]
+      "tags": ["managed", "saas", "deployment", "encryption"],
+      "applicability": {
+        "deployment_models": ["managed-saas"]
+      }
     },
     {
       "id": "legal-contract",

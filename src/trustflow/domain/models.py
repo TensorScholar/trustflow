@@ -77,6 +77,14 @@ class EvaluationScenario(StrEnum):
     CONTRADICTORY_QUESTION = "contradictory_question"
 
 
+class ApplicabilityScope(StrictModel):
+    """Explicit dimensions that bound where an evidence source may support a claim."""
+
+    products: frozenset[NonEmptyText] = frozenset()
+    regions: frozenset[NonEmptyText] = frozenset()
+    deployment_models: frozenset[NonEmptyText] = frozenset()
+
+
 class SourceDocument(StrictModel):
     id: NonEmptyText
     title: NonEmptyText
@@ -89,6 +97,7 @@ class SourceDocument(StrictModel):
     updated_at: AwareDatetime = Field(default_factory=utc_now)
     valid_until: AwareDatetime | None = None
     tags: frozenset[str] = frozenset()
+    applicability: ApplicabilityScope = Field(default_factory=ApplicabilityScope)
 
 
 class QuestionLocation(StrictModel):
@@ -130,6 +139,7 @@ class Evidence(StrictModel):
     score: Confidence
     updated_at: AwareDatetime
     valid_until: AwareDatetime | None = None
+    applicability: ApplicabilityScope = Field(default_factory=ApplicabilityScope)
 
 
 class DraftAnswer(StrictModel):

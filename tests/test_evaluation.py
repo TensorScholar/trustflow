@@ -11,7 +11,11 @@ from trustflow.domain.models import (
     QuestionLocation,
     QuestionSensitivity,
 )
-from trustflow.evaluation import load_adversarial_corpus, run_adversarial_corpus
+from trustflow.evaluation import (
+    adversarial_report_violations,
+    load_adversarial_corpus,
+    run_adversarial_corpus,
+)
 
 
 def _question(identifier: str, text: str) -> Question:
@@ -122,6 +126,7 @@ def test_adversarial_corpus_covers_required_scenarios_reproducibly(service) -> N
     assert report.draft.cases == 15
     assert report.revalidation_cases == 1
     assert report.revalidation_failures == ()
+    assert adversarial_report_violations(report) == ()
     for value in (
         report.draft.status_accuracy,
         report.draft.citation_recall,
@@ -131,3 +136,14 @@ def test_adversarial_corpus_covers_required_scenarios_reproducibly(service) -> N
         report.draft.forbidden_citation_rate,
     ):
         assert 0.0 <= value <= 1.0
+
+
+def test_adversarial_release_gate_detects_metric_regression(service) -> None:
+    report = run_adversarial_corpus(generator=service.generator)
+    degraded = report.model_copy(
+        update={"draft": report.draft.model_copy(update={"citation_precision": 0.5})}
+    )
+
+    assert "citation_precision=0.500000;expected=1.000000" in adversarial_report_violations(
+        degraded
+    )

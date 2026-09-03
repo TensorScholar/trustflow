@@ -1,4 +1,4 @@
-"""Inspectible lexical evidence retrieval."""
+"""Inspectible lexical evidence retrieval with deterministic applicability gating."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import math
 import re
 from datetime import datetime
 
+from trustflow.domain.claim_safety import infer_claim_scope, source_matches_claim_scope
 from trustflow.domain.evidence import source_content_digest, source_provenance_digest
 from trustflow.domain.models import Evidence, PolicySettings, SourceDocument
 
@@ -90,9 +91,12 @@ def retrieve(
     # intentionally evaluated by the deterministic policy gate rather than filtered out here.
     _ = now
     query_tokens = tokenize(query)
+    claim_scope = infer_claim_scope(query)
     candidates: list[tuple[float, SourceDocument, str]] = []
     for source in sources:
         if policy.require_approved_sources and not source.approved:
+            continue
+        if not source_matches_claim_scope(claim_scope, source.applicability):
             continue
         scored_passages = [
             (_score(query_tokens, passage), passage) for passage in _passages(source.content)
@@ -118,6 +122,7 @@ def retrieve(
             score=round(score, 4),
             updated_at=source.updated_at,
             valid_until=source.valid_until,
+            applicability=source.applicability,
         )
         for score, source, excerpt in candidates[:limit]
     )

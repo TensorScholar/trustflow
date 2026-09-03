@@ -26,9 +26,14 @@ def source_provenance_digest(source: SourceDocument) -> str:
     """Fingerprint governance metadata whose drift must invalidate an evidence snapshot."""
     metadata = source.model_dump(
         mode="json",
-        exclude={"content", "tags", "updated_at", "valid_until"},
+        exclude={"applicability", "content", "tags", "updated_at", "valid_until"},
     )
     metadata["tags"] = sorted(source.tags)
+    metadata["applicability"] = {
+        "products": sorted(source.applicability.products),
+        "regions": sorted(source.applicability.regions),
+        "deployment_models": sorted(source.applicability.deployment_models),
+    }
     metadata["updated_at"] = _canonical_timestamp(source.updated_at)
     metadata["valid_until"] = _canonical_timestamp(source.valid_until)
     payload = json.dumps(
@@ -50,6 +55,7 @@ def _evidence_snapshot_matches_source(source: SourceDocument, evidence: Evidence
         and evidence.owner == source.owner
         and evidence.updated_at == source.updated_at
         and evidence.valid_until == source.valid_until
+        and evidence.applicability == source.applicability
         and bool(evidence.excerpt.strip())
         and evidence.excerpt in source.content
     )

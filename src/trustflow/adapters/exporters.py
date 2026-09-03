@@ -359,6 +359,11 @@ class ExporterRegistry:
                             "version": item.source_version,
                             "digest": item.source_digest,
                             "uri": item.source_uri,
+                            "applicability": {
+                                "products": sorted(item.applicability.products),
+                                "regions": sorted(item.applicability.regions),
+                                "deployment_models": sorted(item.applicability.deployment_models),
+                            },
                         }
                         for item in answer.evidence
                     ],
