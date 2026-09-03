@@ -207,7 +207,9 @@ def main() -> None:
     output_group.add_argument(
         "--emit",
         type=Path,
-        help="Write the full current canonical contract to a review artifact without changing lock.",
+        help=(
+            "Write the full current canonical contract to a review artifact without changing lock."
+        ),
     )
     args = parser.parse_args()
 
