@@ -9,7 +9,7 @@ TrustFlow converts questionnaires into evidence-backed, reviewable claims instea
 ```text
 safe document import -> question extraction -> approved evidence retrieval
 -> evidence-only draft -> policy gates -> human review -> safe export
--> source-change impact scan
+-> source-change impact scan -> governed revalidation -> fresh review when required
 ```
 
 > No evidence, no external claim.
@@ -20,14 +20,15 @@ TrustFlow `0.1.0rc2` is a hardened engineering release candidate for demonstrati
 
 RFP and security-questionnaire workflows fail when generated answers cannot be traced to approved evidence or when sensitive claims bypass review. TrustFlow makes those controls explicit:
 
-- approved, versioned and freshness-aware evidence sources;
+- approved, versioned, applicability-bounded and freshness-aware evidence sources;
 - deterministic evidence-only drafting by default;
-- mandatory review for sensitive, stale, conflicting or unsupported claims;
+- mandatory review for sensitive, conflicting, source-changed or otherwise reviewable claims;
+- hard blocking for stale or unsupported claims until valid evidence exists;
 - fail-closed export with source-file overwrite protection;
 - safe XLSX, DOCX, CSV, JSON, Markdown and text-extractable PDF handling;
-- source-change impact analysis across answer/evidence snapshots, including latest review context;
+- source-change impact analysis plus identity-preserving claim revalidation with review invalidation;
 - one narrow, commit-pinned GitHub exact-file evidence source;
-- hash-chained audit events and measurable workflow outcomes.
+- hash-chained audit events and governance metrics derived from current persisted state.
 
 No API key is required for the default local workflow.
 
@@ -70,7 +71,7 @@ trustflow ingest-github-source \
   --approved
 ```
 
-The connector resolves the supplied ref to an immutable commit SHA and then reads the exact file at that commit. It does not search repositories, follow redirects, perform writes, or persist the token. Without `--approved`, the source remains unavailable to default evidence retrieval.
+The connector resolves the supplied ref to an immutable commit SHA and then reads the exact file at that commit. It does not search repositories, follow redirects, perform writes, persist the token, or inherit ambient HTTP proxy configuration. Without `--approved`, the source remains unavailable to default evidence retrieval.
 
 See [GitHub evidence source](docs/integrations/github.md) for its authorization and validation boundary.
 
@@ -89,11 +90,13 @@ Macro-enabled or malformed Office containers are rejected before parser librarie
 
 ## Safety model
 
-Export is fail closed. Drafts marked `review_required`, `conflict`, or `stale` require an `approved` or `edited` human review. `unanswerable` drafts have no approved evidence and cannot be promoted to an external claim. Review decisions are bound to the exact draft/evidence snapshot they evaluated.
+Export is fail closed. Drafts marked `review_required` or `conflict` need a successful human review bound to the exact current draft/evidence snapshot. `stale` evidence cannot be repaired by approval: the source must be refreshed and the affected claim revalidated. `unanswerable` drafts have no approved evidence and cannot be promoted to an external claim.
+
+When current source state invalidates a claim snapshot, `impact-scan` identifies the dependency and `revalidate` replaces only the affected draft while preserving its answer identity and historical review record. A previous approval remains historical but is not transferable to the new digest. Source-changed claims that would otherwise auto-answer are deliberately forced through fresh review before release.
 
 TrustFlow also rejects attempts to overwrite the imported source questionnaire and commits completed exports with an atomic create-if-absent operation. Evidence reuse is blocked when either source content or source provenance metadata has drifted since retrieval.
 
-See the [security model](docs/security-model.md) and [limitations](docs/limitations.md) before exposing any adapter or API beyond a local evaluation environment.
+See [revalidation and governance metrics](docs/revalidation-and-metrics.md), the [security model](docs/security-model.md), and [limitations](docs/limitations.md) before exposing any adapter or API beyond a local evaluation environment.
 
 ## Architecture
 
@@ -104,6 +107,7 @@ See [architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-modular-mo
 ## Documentation
 
 - [Architecture and integration contracts](docs/architecture.md)
+- [Source-change revalidation and governance metrics](docs/revalidation-and-metrics.md)
 - [GitHub evidence source](docs/integrations/github.md)
 - [Supported document formats](docs/formats.md)
 - [Security model and risk register](docs/security-model.md)
@@ -116,7 +120,7 @@ See [architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-modular-mo
 
 ## Release boundary
 
-Included in `0.1.0rc2`: safe import and extraction, evidence registry and retrieval, deterministic drafting, review gates, conflict/staleness handling, safe export, source-content and source-provenance impact scanning, SQLite/in-memory storage, audit verification, metrics, CLI, one optional commit-pinned GitHub exact-file evidence connector, optional API, tests and release automation.
+Included in `0.1.0rc2`: safe import and extraction, evidence registry and retrieval, deterministic drafting, applicability/review gates, conflict/staleness handling, safe export, source-content and source-provenance impact scanning, governed claim revalidation, questionnaire-local governance metrics, SQLite/in-memory storage, audit verification, CLI, one optional commit-pinned GitHub exact-file evidence connector, optional local-only API, tests and release automation.
 
 Not included: OCR, broad enterprise connector coverage, repository discovery/search, browser extensions, autonomous legal approval, hosted multi-tenancy, authentication/authorization, production DLP/retention controls, or a production-readiness claim.
 
