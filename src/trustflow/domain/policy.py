@@ -1,10 +1,11 @@
-"""Answer policy and conflict detection."""
+"""Answer policy, conflict detection, and deterministic claim-safety gates."""
 
 from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
 
+from trustflow.domain.claim_safety import claim_risk_reasons, infer_claim_scope
 from trustflow.domain.models import (
     AnswerStatus,
     Evidence,
@@ -22,6 +23,11 @@ def evidence_conflicts(evidence: tuple[Evidence, ...]) -> bool:
     return len(polarities) > 1
 
 
+def _has_explicit_scope(question: str) -> bool:
+    scope = infer_claim_scope(question)
+    return bool(scope.products or scope.regions or scope.deployment_models)
+
+
 def decide_status(
     *,
     confidence: float,
@@ -29,9 +35,12 @@ def decide_status(
     sensitivity: QuestionSensitivity,
     policy: PolicySettings,
     now: datetime | None = None,
+    question: str | None = None,
 ) -> tuple[AnswerStatus, tuple[str, ...]]:
     current_time = now or datetime.now(UTC)
     if not evidence:
+        if question is not None and _has_explicit_scope(question):
+            return AnswerStatus.UNANSWERABLE, ("no_applicable_evidence",)
         return AnswerStatus.UNANSWERABLE, ("no_approved_evidence",)
     if any(item.valid_until is not None and item.valid_until <= current_time for item in evidence):
         return AnswerStatus.STALE, ("source_expired",)
@@ -42,6 +51,8 @@ def decide_status(
         return AnswerStatus.STALE, ("source_age_exceeded",)
     if evidence_conflicts(evidence):
         return AnswerStatus.CONFLICT, ("sources_conflict",)
+    if question is not None and (risks := claim_risk_reasons(question, evidence)):
+        return AnswerStatus.REVIEW_REQUIRED, risks
     if confidence < policy.minimum_answer_confidence:
         return AnswerStatus.REVIEW_REQUIRED, ("low_confidence",)
     if policy.sensitive_requires_review and sensitivity is not QuestionSensitivity.STANDARD:
