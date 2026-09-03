@@ -111,7 +111,7 @@ def source_matches_claim_scope(
     claim_scope: ApplicabilityScope,
     source_scope: ApplicabilityScope,
 ) -> bool:
-    """Reject only explicit declared mismatches; undeclared source scope is reviewable, not trusted."""
+    """Reject explicit mismatches; undeclared source scope remains reviewable, not trusted."""
     dimensions = (
         (claim_scope.products, source_scope.products),
         (claim_scope.regions, source_scope.regions),
@@ -130,14 +130,14 @@ def source_matches_claim_scope(
 
 
 def _risk_tokens(text: str) -> frozenset[str]:
-    tokens: set[str] = set()
+    terms: set[str] = set()
     for raw in _WORD.findall(text):
-        token = canonical_scope_value(raw)
-        if token.startswith("encrypt"):
-            token = "encrypt"
-        if token and token not in _RISK_STOPWORDS:
-            tokens.add(token)
-    return frozenset(tokens)
+        term = canonical_scope_value(raw)
+        if term.startswith("encrypt"):
+            term = "encrypt"
+        if term and term not in _RISK_STOPWORDS:
+            terms.add(term)
+    return frozenset(terms)
 
 
 def _applicability_unknown_reasons(
