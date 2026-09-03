@@ -60,11 +60,7 @@ def canonical_scope_value(value: str) -> str:
 
 
 def _canonical_values(values: Iterable[str]) -> frozenset[str]:
-    return frozenset(
-        normalized
-        for value in values
-        if (normalized := canonical_scope_value(value))
-    )
+    return frozenset(normalized for value in values if (normalized := canonical_scope_value(value)))
 
 
 def infer_claim_scope(question: str) -> ApplicabilityScope:
@@ -124,8 +120,10 @@ def source_matches_claim_scope(
     for requested, declared in dimensions:
         normalized_requested = _canonical_values(requested)
         normalized_declared = _canonical_values(declared)
-        if normalized_requested and normalized_declared and normalized_requested.isdisjoint(
-            normalized_declared
+        if (
+            normalized_requested
+            and normalized_declared
+            and normalized_requested.isdisjoint(normalized_declared)
         ):
             return False
     return True
@@ -180,7 +178,9 @@ def _overbroad_risk(question: str, evidence: tuple[Evidence, ...]) -> bool:
     question_markers = _risk_tokens(question) & _UNIVERSAL_MARKERS
     if not question_markers:
         return False
-    evidence_markers = _risk_tokens(" ".join(item.excerpt for item in evidence)) & _UNIVERSAL_MARKERS
+    evidence_markers = (
+        _risk_tokens(" ".join(item.excerpt for item in evidence)) & _UNIVERSAL_MARKERS
+    )
     return not question_markers <= evidence_markers
 
 
