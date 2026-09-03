@@ -35,8 +35,9 @@ def test_claim_scope_extraction_is_dimension_specific_and_canonical() -> None:
     assert deployment.deployment_models == frozenset({"customer-managed"})
 
 
-def test_scope_parser_underextracts_ambiguous_region_wording() -> None:
-    scope = infer_claim_scope("Is customer data in the region encrypted at rest?")
+def test_scope_parser_underextracts_ambiguous_structural_wording() -> None:
+    scope = infer_claim_scope("Does the product encrypt customer data in the region?")
+    assert scope.products == frozenset()
     assert scope.regions == frozenset()
 
 
