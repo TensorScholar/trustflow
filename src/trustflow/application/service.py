@@ -66,6 +66,11 @@ class TrustFlowService:
             "version": source.version,
             "approved": source.approved,
             "owner": source.owner,
+            "applicability": {
+                "products": sorted(source.applicability.products),
+                "regions": sorted(source.applicability.regions),
+                "deployment_models": sorted(source.applicability.deployment_models),
+            },
             "replaced": previous is not None,
             "impact_count": impact_count,
         }
@@ -103,6 +108,7 @@ class TrustFlowService:
                 evidence=evidence,
                 sensitivity=question.sensitivity,
                 policy=self.policy,
+                question=question.text,
             )
             answers.append(
                 DraftAnswer(
@@ -125,6 +131,7 @@ class TrustFlowService:
                         "question_id": answer.question_id,
                         "status": answer.status.value,
                         "source_ids": [item.source_id for item in answer.evidence],
+                        "reasons": list(answer.reasons),
                     },
                 )
         return answers
@@ -369,7 +376,12 @@ class TrustFlowService:
         unsupported = 0
         sensitive_auto = 0
         for case in cases:
-            evidence = retrieve(case.question.text, self.store.list_sources(), self.policy)
+            evidence = retrieve(
+                case.question.text,
+                self.store.list_sources(),
+                self.policy,
+                now=case.evaluated_at,
+            )
             text, confidence = self.generator.generate(
                 question=case.question.text,
                 evidence=evidence,
@@ -379,6 +391,8 @@ class TrustFlowService:
                 evidence=evidence,
                 sensitivity=case.question.sensitivity,
                 policy=self.policy,
+                now=case.evaluated_at,
+                question=case.question.text,
             )
             status_hits += status is case.expected_status
             actual = {item.source_id for item in evidence}
