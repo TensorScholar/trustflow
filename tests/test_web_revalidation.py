@@ -36,9 +36,7 @@ def test_api_exposes_revalidation_and_governance_metrics(tmp_path) -> None:
         files={
             "file": (
                 "questions.json",
-                io.BytesIO(
-                    json.dumps({"questions": ["What is your favorite color?"]}).encode()
-                ),
+                io.BytesIO(json.dumps({"questions": ["What is your favorite color?"]}).encode()),
                 "application/json",
             )
         },
