@@ -45,7 +45,9 @@ def test_edited_review_may_select_a_complete_retained_evidence_excerpt(service, 
     questionnaire = service.import_questionnaire(_questionnaire(tmp_path))
     answer = service.draft(questionnaire.id)[0]
     alternative = next(
-        item.excerpt for item in answer.evidence if item.excerpt.casefold() != answer.text.casefold()
+        item.excerpt
+        for item in answer.evidence
+        if item.excerpt.casefold() != answer.text.casefold()
     )
 
     review = service.review(
@@ -56,3 +58,4 @@ def test_edited_review_may_select_a_complete_retained_evidence_excerpt(service, 
     )
     assert review.final_text == alternative
     service.export(questionnaire.id, tmp_path / "edited.json")
+    assert service.governance_metrics(questionnaire.id)["reviewer_edit_rate"] == 1.0
