@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
 from statistics import median
 from time import perf_counter
-from typing import Callable
 
 from trustflow.domain.models import Evidence, PolicySettings, SourceDocument
 from trustflow.domain.retrieval import prepare_sources, retrieve, retrieve_prepared
@@ -100,10 +101,10 @@ def main() -> None:
         prepared_build_seconds = perf_counter() - prepared_started
         prepared_elapsed, prepared_checksum = _run(
             questions,
-            lambda question: retrieve_prepared(
-                question,
-                prepared_sources,
-                policy,
+            partial(
+                retrieve_prepared,
+                sources=prepared_sources,
+                policy=policy,
                 now=FIXED_TIME,
             ),
         )
