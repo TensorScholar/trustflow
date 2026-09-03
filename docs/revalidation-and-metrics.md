@@ -19,7 +19,17 @@ A prior review is therefore historical evidence, not a transferable approval. It
 
 If a source-changed answer would otherwise become `answered` automatically, TrustFlow deliberately promotes it to `review_required` and records `source_change_revalidation`. Source change must not silently release a new external assertion.
 
+A successful review also rechecks current evidence before recording approval. If evidence changed between drafting/revalidation and the review action, the review fails rather than creating an approval state that export would immediately invalidate.
+
 A `stale` answer is different from an ordinary reviewable answer. Human approval cannot make invalid evidence current. The evidence source must first be refreshed and the affected answer revalidated. `unanswerable` answers likewise cannot be promoted into evidence-backed external claims through review.
+
+## Human-edit boundary
+
+TrustFlow does not claim semantic verification of arbitrary reviewer-written prose. Allowing unconstrained `edited` text would let a human silently broaden a claim beyond the evidence while retaining the original evidence lineage.
+
+The pre-1.0 fail-closed rule is therefore narrow: an `edited` final claim must match, modulo case and whitespace, one **complete retained evidence excerpt**. A reviewer may select another evidence-backed wording from the retained evidence set, but cannot add prose or trim qualifiers from an excerpt and still inherit the existing governance binding.
+
+`approved` continues to mean the exact generated draft text was accepted unchanged. More flexible human rewriting requires a future deterministic claim-support contract or a new evidence/review cycle; it is not implied by the current `edited` state.
 
 ## Commands
 
@@ -73,7 +83,7 @@ The scorecard is descriptive operational telemetry calculated from persisted Tru
 | `review_required_answers` | Number currently requiring a resolvable human review |
 | `review_completed_answers` | Review-required answers whose latest successful review is bound to the current answer digest |
 | `review_completion_rate` | `review_completed_answers / review_required_answers`; `1.0` when no review is required |
-| `reviewer_edit_rate` | Fraction of current successful reviews that changed the draft rather than approving it verbatim |
+| `reviewer_edit_rate` | Fraction of current successful reviews that selected an alternative complete retained evidence excerpt rather than approving the generated draft verbatim |
 | `revalidation_required_answers` | Unique current answers with one or more source-impact findings |
 | `revalidation_required_rate` | `revalidation_required_answers / answers` |
 | `impact_findings` | Number of evidence-level current impact findings; one answer can have several |
@@ -87,5 +97,6 @@ The scorecard is descriptive operational telemetry calculated from persisted Tru
 
 - Revalidation does not determine business materiality of a source change beyond the deterministic invalidation rules already encoded by TrustFlow.
 - A human review does not repair expired, revoked or otherwise invalid evidence.
+- The evidence-bound edit rule does not provide general semantic entailment or free-form rewriting.
 - Turnaround metrics do not prove labor savings without a prospective baseline and independent real workflow data.
 - The current scorecard is questionnaire-local and single-node; it is not a hosted analytics or tenant reporting system.
