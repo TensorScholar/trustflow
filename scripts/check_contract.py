@@ -182,20 +182,34 @@ def _bootstrap_payload(content: bytes) -> str:
     return base64.b64encode(zlib.compress(content, level=9)).decode("ascii")
 
 
+def _write_contract(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument(
         "--write",
         action="store_true",
         help="Explicitly replace the frozen contract baseline with the current surface.",
+    )
+    output_group.add_argument(
+        "--emit",
+        type=Path,
+        help="Write the current canonical contract to a review artifact without changing baseline.",
     )
     args = parser.parse_args()
 
     current = canonical_bytes(build_contract())
     if args.write:
-        CONTRACT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONTRACT_PATH.write_bytes(current)
+        _write_contract(CONTRACT_PATH, current)
         print(f"wrote {CONTRACT_PATH}")
+        return
+    if args.emit is not None:
+        _write_contract(args.emit, current)
+        print(f"emitted {args.emit}")
         return
 
     if not CONTRACT_PATH.is_file():
