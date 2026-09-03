@@ -31,6 +31,13 @@ jobs:
       - run: python scripts/secret_scan.py
       - run: python scripts/generate_schemas.py
       - run: git diff --exit-code -- schemas
+      - run: python scripts/check_contract.py --emit .contract/current.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: v0.1-contract-python-${{ matrix.python-version }}
+          path: .contract/current.json
+          if-no-files-found: error
+          retention-days: 7
       - run: python scripts/check_contract.py
       - run: pytest --cov=trustflow --cov-branch --cov-report=xml
       - run: trustflow demo
