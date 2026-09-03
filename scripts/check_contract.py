@@ -147,7 +147,10 @@ def _sqlite_contract() -> dict[str, object]:
                             ],
                         }
                     )
-                tables[table] = {"columns": columns, "indexes": sorted(indexes, key=lambda x: x["name"])}
+                tables[table] = {
+                    "columns": columns,
+                    "indexes": sorted(indexes, key=lambda x: x["name"]),
+                }
             return tables
         finally:
             connection.close()
