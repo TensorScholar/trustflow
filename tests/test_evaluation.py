@@ -109,7 +109,9 @@ def test_adversarial_corpus_covers_required_scenarios_reproducibly(service) -> N
     assert len(corpus.revalidation_cases) == 1
 
     duplicate = next(
-        case for case in corpus.draft_cases if case.scenario is EvaluationScenario.DUPLICATE_QUESTION
+        case
+        for case in corpus.draft_cases
+        if case.scenario is EvaluationScenario.DUPLICATE_QUESTION
     )
     original = next(case for case in corpus.draft_cases if case.id == duplicate.duplicate_of)
     assert duplicate.question == original.question
