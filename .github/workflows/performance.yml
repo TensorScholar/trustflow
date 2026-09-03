@@ -1,0 +1,22 @@
+name: Performance probe
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval-performance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install --upgrade pip "setuptools>=83.0.0" wheel
+      - run: python -m pip install -e .
+      - run: python scripts/run_performance_probe.py
