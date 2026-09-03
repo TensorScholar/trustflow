@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from trustflow.domain.models import ApplicabilityScope, PolicySettings, SourceDocument
-from trustflow.domain.retrieval import retrieve
+from trustflow.domain.retrieval import prepare_sources, retrieve, retrieve_prepared
 
 
 def source(identifier: str, content: str, **kwargs) -> SourceDocument:
@@ -89,3 +89,32 @@ def test_matching_region_scope_is_snapshotted_on_evidence() -> None:
     )
     assert results[0].source_id == "eu"
     assert results[0].applicability == eu.applicability
+
+
+def test_prepared_retrieval_is_exactly_equivalent_to_cold_retrieval() -> None:
+    sources = [
+        source(
+            "cloud-eu",
+            "Company overview. Customer data in the EU region is encrypted at rest with AES-256.",
+            applicability=ApplicabilityScope(
+                products=frozenset({"cloud"}),
+                regions=frozenset({"EU"}),
+            ),
+        ),
+        source(
+            "cloud-us",
+            "Customer data in the US region is encrypted at rest with AES-256.",
+            applicability=ApplicabilityScope(
+                products=frozenset({"cloud"}),
+                regions=frozenset({"US"}),
+            ),
+        ),
+        source("unscoped", "Customer data is encrypted at rest with AES-256."),
+    ]
+    policy = PolicySettings()
+    query = "Does the cloud product encrypt customer data at rest in the EU region?"
+
+    cold = retrieve(query, sources, policy)
+    prepared = retrieve_prepared(query, prepare_sources(sources), policy)
+
+    assert prepared == cold
