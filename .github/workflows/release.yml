@@ -2,15 +2,6 @@ name: Release evidence build
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/release.yml"
-      - "compatibility/**"
-      - "scripts/check_release.py"
-      - "scripts/check_release_artifacts.py"
-      - "src/trustflow/_version.py"
-      - "CHANGELOG.md"
-      - "CITATION.cff"
-      - "pyproject.toml"
   workflow_dispatch:
     inputs:
       tag:
@@ -29,7 +20,7 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +58,7 @@ jobs:
       - run: python -m pip_audit
 
   github-evidence-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -84,7 +75,7 @@ jobs:
 
   build:
     needs: [quality, github-evidence-smoke]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -108,8 +99,24 @@ jobs:
         run: |
           echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
-      - run: python -m build --outdir dist-a
-      - run: python -m build --outdir dist-b
+      - name: Prepare independent clean source snapshots
+        run: |
+          SOURCE_ARCHIVE="$RUNNER_TEMP/release-source.tar"
+          SOURCE_A="$RUNNER_TEMP/release-source-a"
+          SOURCE_B="$RUNNER_TEMP/release-source-b"
+          rm -rf "$SOURCE_A" "$SOURCE_B" "$SOURCE_ARCHIVE"
+          mkdir -p "$SOURCE_A" "$SOURCE_B"
+          git archive --format=tar --output="$SOURCE_ARCHIVE" "$SOURCE_COMMIT"
+          tar -xf "$SOURCE_ARCHIVE" -C "$SOURCE_A"
+          tar -xf "$SOURCE_ARCHIVE" -C "$SOURCE_B"
+          find "$SOURCE_A" "$SOURCE_B" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+          diff -qr "$SOURCE_A" "$SOURCE_B"
+          echo "RELEASE_SOURCE_A=$SOURCE_A" >> "$GITHUB_ENV"
+          echo "RELEASE_SOURCE_B=$SOURCE_B" >> "$GITHUB_ENV"
+      - name: Build first independent distribution set
+        run: python -m build --outdir "$GITHUB_WORKSPACE/dist-a" "$RELEASE_SOURCE_A"
+      - name: Build second independent distribution set
+        run: python -m build --outdir "$GITHUB_WORKSPACE/dist-b" "$RELEASE_SOURCE_B"
       - name: Verify reproducible distributions for PR dry run
         if: github.event_name == 'pull_request'
         run: >-
@@ -127,6 +134,10 @@ jobs:
           --tag "$RELEASE_TAG"
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      - name: Rebuild wheel from retained canonical sdist
+        run: python -m build --outdir dist-from-sdist dist/*.tar.gz
+      - name: Verify canonical sdist rebuild matches retained wheel
+        run: cmp --silent dist/*.whl dist-from-sdist/*.whl
       - run: python -m twine check dist/*.whl dist/*.tar.gz
       - run: python -m pip install --force-reinstall --no-deps dist/*.whl
       - run: python scripts/smoke_install.py
