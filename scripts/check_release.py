@@ -63,9 +63,7 @@ def validate_release(tag: str | None, *, require_main_tip: bool) -> str:
         except subprocess.CalledProcessError as exc:
             raise SystemExit(f"release tag ref is unavailable: {tag}") from exc
         if head != tag_commit:
-            raise SystemExit(
-                f"release tag does not resolve to HEAD: tag={tag_commit}, HEAD={head}"
-            )
+            raise SystemExit(f"release tag does not resolve to HEAD: tag={tag_commit}, HEAD={head}")
 
     status = _git("status", "--porcelain", "--untracked-files=all")
     if status:
