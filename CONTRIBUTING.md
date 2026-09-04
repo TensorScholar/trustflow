@@ -21,6 +21,7 @@ python scripts/security_scan.py
 python scripts/secret_scan.py
 python scripts/generate_schemas.py
 git diff --exit-code -- schemas
+python scripts/check_contract.py
 pytest --cov=trustflow --cov-branch
 trustflow demo
 python -m pip_audit
@@ -49,13 +50,19 @@ TrustFlow uses a modular-monolith architecture with hexagonal boundaries. Large 
 Before publishing a release:
 
 - CI must be green on every supported Python version;
-- Ruff, strict mypy, pytest/coverage, security checks, schema reproducibility, demo and `pip-audit` must pass;
-- build artifacts and metadata must be validated from the release commit;
-- version-bearing files and the release tag must agree;
+- Ruff, strict mypy, pytest/coverage, security checks, schema reproducibility, the v0.1 compatibility contract, demo and `pip-audit` must pass;
+- a real candidate tag must match package metadata and point at the current `main` tip;
+- the live GitHub evidence smoke must pass on the release source;
+- wheel and sdist builds must be byte-reproducible under the commit-derived `SOURCE_DATE_EPOCH`;
+- release distributions must pass archive-safety inspection, `twine check`, wheel install smoke, and SHA-256 checksum generation;
+- the retained `release-evidence.json` must bind artifact hashes to the exact source commit and compatibility lock;
+- CodeQL and the performance probe must pass for a real release tag before publication is authorized;
 - no customer data, credentials or machine-local artifacts may be included;
 - release notes must state residual limitations accurately.
 
-PyPI publication remains manual for the `0.1` line.
+Release-critical pull requests execute the release workflow as a non-publishing dry run. See [release engineering](docs/release-engineering.md) for the exact evidence bundle and source eligibility rules.
+
+PyPI publication remains manual for the `0.1` line and is not authorized merely by a successful build artifact.
 
 ## Conduct
 
