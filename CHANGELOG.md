@@ -6,8 +6,8 @@
   and SQLite surfaces, with cross-Python canonical contract evidence in CI.
 - Made local evaluation API response schemas explicit and stopped exposing server-side
   questionnaire source paths through the public questionnaire response.
-- Hardened release builds to require version-consistent metadata and the current main tip for
-  real tag/manual candidates.
+- Hardened release builds to require version-consistent metadata, the current main tip, and the
+  exact named tag ref resolving to the checked-out commit for real tag/manual candidates.
 - Added a self-contained Python 3.11/3.12/3.13 release quality matrix, compatibility verification,
   and live GitHub evidence smoke.
 - Added independent clean-source double builds, deterministic sdist metadata canonicalization,
