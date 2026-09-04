@@ -1,11 +1,13 @@
-"""Verify reproducible release distributions and emit integrity evidence."""
+"""Verify release distributions and emit reproducibility/integrity evidence."""
 
 from __future__ import annotations
 
 import argparse
 import gzip
 import hashlib
+import io
 import json
+import os
 import shutil
 import tarfile
 import tomllib
@@ -14,6 +16,7 @@ from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
 FORBIDDEN_SUFFIXES = (".db", ".env", ".key", ".p12", ".pem", ".sqlite", ".sqlite3")
+SDIST_NORMALIZATION_VERSION = 1
 
 
 def _sha256(path: Path) -> str:
@@ -49,8 +52,12 @@ def _distribution_files(directory: Path) -> dict[str, Path]:
 
 
 def _validate_member_name(name: str) -> None:
+    if not name or "\x00" in name or "\\" in name:
+        raise SystemExit(f"unsafe distribution member path: {name!r}")
     path = PurePosixPath(name)
     if path.is_absolute() or ".." in path.parts:
+        raise SystemExit(f"unsafe distribution member path: {name}")
+    if path.parts and path.parts[0].endswith(":"):
         raise SystemExit(f"unsafe distribution member path: {name}")
     lowered = name.lower()
     if lowered.endswith(FORBIDDEN_SUFFIXES):
@@ -58,17 +65,27 @@ def _validate_member_name(name: str) -> None:
 
 
 def _validate_wheel(path: Path) -> None:
+    seen: set[str] = set()
     with zipfile.ZipFile(path) as archive:
         for info in archive.infolist():
             _validate_member_name(info.filename)
+            if info.filename in seen:
+                raise SystemExit(f"duplicate wheel member: {info.filename}")
+            seen.add(info.filename)
 
 
 def _validate_sdist(path: Path) -> None:
+    seen: set[str] = set()
     with tarfile.open(path, "r:gz") as archive:
         for member in archive.getmembers():
             _validate_member_name(member.name)
+            if member.name in seen:
+                raise SystemExit(f"duplicate sdist member: {member.name}")
+            seen.add(member.name)
             if member.issym() or member.islnk():
                 raise SystemExit(f"release sdist contains link member: {member.name}")
+            if not member.isfile() and not member.isdir():
+                raise SystemExit(f"unsupported sdist member type: {member.name}")
 
 
 def _gzip_header_mtime(path: Path) -> int | None:
@@ -82,6 +99,8 @@ def _tar_manifest(path: Path) -> dict[str, dict[str, object]]:
     manifest: dict[str, dict[str, object]] = {}
     with tarfile.open(path, "r:gz") as archive:
         for member in archive.getmembers():
+            if member.name in manifest:
+                raise SystemExit(f"duplicate sdist member: {member.name}")
             payload_sha256: str | None = None
             if member.isfile():
                 extracted = archive.extractfile(member)
@@ -102,6 +121,18 @@ def _tar_manifest(path: Path) -> dict[str, dict[str, object]]:
                 "payload_sha256": payload_sha256,
             }
     return manifest
+
+
+def _content_manifest(path: Path) -> dict[str, tuple[str, int, str | None]]:
+    manifest = _tar_manifest(path)
+    return {
+        name: (
+            str(entry["type"]),
+            int(entry["size"]),
+            entry["payload_sha256"] if isinstance(entry["payload_sha256"], str) else None,
+        )
+        for name, entry in manifest.items()
+    }
 
 
 def _sdist_difference_summary(first: Path, second: Path) -> str:
@@ -156,6 +187,77 @@ def _sdist_difference_summary(first: Path, second: Path) -> str:
     )
 
 
+def _normalized_mode(member: tarfile.TarInfo) -> int:
+    if member.isdir():
+        return 0o755
+    return 0o755 if member.mode & 0o111 else 0o644
+
+
+def _canonicalize_sdist(path: Path, *, source_date_epoch: int) -> None:
+    if source_date_epoch < 0:
+        raise SystemExit("source date epoch must be non-negative")
+
+    _validate_sdist(path)
+    before = _content_manifest(path)
+    temporary = path.with_name(f".{path.name}.canonical")
+    temporary.unlink(missing_ok=True)
+
+    try:
+        with tarfile.open(path, "r:gz") as source, temporary.open("wb") as raw_output:
+            with gzip.GzipFile(
+                filename="",
+                mode="wb",
+                fileobj=raw_output,
+                compresslevel=9,
+                mtime=source_date_epoch,
+            ) as gzip_output:
+                with tarfile.open(
+                    fileobj=gzip_output,
+                    mode="w|",
+                    format=tarfile.PAX_FORMAT,
+                ) as target:
+                    for member in sorted(source.getmembers(), key=lambda item: item.name):
+                        _validate_member_name(member.name)
+                        if member.issym() or member.islnk():
+                            raise SystemExit(f"release sdist contains link member: {member.name}")
+                        if not member.isfile() and not member.isdir():
+                            raise SystemExit(f"unsupported sdist member type: {member.name}")
+
+                        normalized = tarfile.TarInfo(member.name)
+                        normalized.type = tarfile.DIRTYPE if member.isdir() else tarfile.REGTYPE
+                        normalized.mode = _normalized_mode(member)
+                        normalized.mtime = source_date_epoch
+                        normalized.uid = 0
+                        normalized.gid = 0
+                        normalized.uname = ""
+                        normalized.gname = ""
+                        normalized.pax_headers = {}
+
+                        if member.isfile():
+                            extracted = source.extractfile(member)
+                            if extracted is None:
+                                raise SystemExit(
+                                    f"unable to canonicalize sdist member: {member.name}"
+                                )
+                            payload = extracted.read()
+                            normalized.size = len(payload)
+                            target.addfile(normalized, io.BytesIO(payload))
+                        else:
+                            normalized.size = 0
+                            target.addfile(normalized)
+
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    _validate_sdist(path)
+    after = _content_manifest(path)
+    if before != after:
+        raise SystemExit("sdist canonicalization changed member set or payload content")
+    if _gzip_header_mtime(path) != source_date_epoch:
+        raise SystemExit("sdist canonicalization did not set deterministic gzip mtime")
+
+
 def _verify_reproducible(first: dict[str, Path], second: dict[str, Path]) -> None:
     if set(first) != set(second):
         raise SystemExit(f"release build filenames differ: {sorted(first)} != {sorted(second)}")
@@ -194,6 +296,27 @@ def main() -> None:
 
     first = _distribution_files(args.first)
     second = _distribution_files(args.second)
+    if set(first) != set(second):
+        raise SystemExit(f"release build filenames differ: {sorted(first)} != {sorted(second)}")
+
+    raw_first_hashes = {name: _sha256(path) for name, path in first.items()}
+    raw_second_hashes = {name: _sha256(path) for name, path in second.items()}
+    raw_byte_equal = {
+        name: raw_first_hashes[name] == raw_second_hashes[name] for name in sorted(first)
+    }
+    raw_sdist_diagnostics = {
+        name: _sdist_difference_summary(first[name], second[name])
+        for name in sorted(first)
+        if name.endswith(".tar.gz") and not raw_byte_equal[name]
+    }
+
+    for files in (first, second):
+        for name, path in files.items():
+            if name.endswith(".whl"):
+                _validate_wheel(path)
+            else:
+                _canonicalize_sdist(path, source_date_epoch=args.source_date_epoch)
+
     _verify_reproducible(first, second)
     for name, path in first.items():
         if name.endswith(".whl"):
@@ -224,6 +347,30 @@ def main() -> None:
         "source_commit": args.source_commit,
         "source_date_epoch": args.source_date_epoch,
         "compatibility_contract": compatibility_lock,
+        "reproducibility": {
+            "scope": "same-run double build; no cross-platform reproducibility claim",
+            "raw_artifact_sha256": {
+                "first": raw_first_hashes,
+                "second": raw_second_hashes,
+            },
+            "raw_artifact_byte_equal": raw_byte_equal,
+            "raw_sdist_diagnostics": raw_sdist_diagnostics,
+            "retained_artifacts_byte_equal": True,
+            "sdist_normalization": {
+                "policy_version": SDIST_NORMALIZATION_VERSION,
+                "archive_format": "pax",
+                "member_order": "lexicographic",
+                "member_mtime": args.source_date_epoch,
+                "gzip_mtime": args.source_date_epoch,
+                "uid": 0,
+                "gid": 0,
+                "uname": "",
+                "gname": "",
+                "directory_mode": "0755",
+                "regular_file_mode": "0755 when source executable, otherwise 0644",
+                "payload_preserved": True,
+            },
+        },
         "artifacts": {
             path.name: {"sha256": _sha256(path), "size_bytes": path.stat().st_size}
             for path in copied
@@ -233,9 +380,12 @@ def main() -> None:
     evidence_path.write_text(
         json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    print(f"raw build byte equality: {raw_byte_equal}")
+    if raw_sdist_diagnostics:
+        print(f"raw sdist diagnostics: {raw_sdist_diagnostics}")
     print(
-        "release distributions verified: byte-reproducible, archive-safe, checksummed, "
-        f"source={args.source_commit}"
+        "retained release distributions verified: deterministic sdist metadata, "
+        f"byte-identical artifacts, archive-safe, checksummed, source={args.source_commit}"
     )
 
 
