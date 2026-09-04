@@ -1,5 +1,19 @@
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+
 import pytest
-from scripts import check_release
+
+
+def _load_release_script():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "check_release.py"
+    spec = spec_from_file_location("trustflow_release_script", path)
+    assert spec is not None and spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+check_release = _load_release_script()
 
 
 def test_release_rejects_wrong_tag() -> None:
