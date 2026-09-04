@@ -23,10 +23,13 @@ def test_release_output_directory_accepts_strict_descendant(tmp_path: Path) -> N
     working_directory.mkdir()
     output = working_directory / "dist" / "release"
 
-    assert _resolve_safe_output_directory(
-        output,
-        working_directory=working_directory,
-    ) == output.resolve()
+    assert (
+        _resolve_safe_output_directory(
+            output,
+            working_directory=working_directory,
+        )
+        == output.resolve()
+    )
 
 
 @pytest.mark.parametrize("target", ["self", "parent", "sibling"])
