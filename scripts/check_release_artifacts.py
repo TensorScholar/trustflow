@@ -203,48 +203,49 @@ def _canonicalize_sdist(path: Path, *, source_date_epoch: int) -> None:
     temporary.unlink(missing_ok=True)
 
     try:
-        with tarfile.open(path, "r:gz") as source, temporary.open("wb") as raw_output:
-            with gzip.GzipFile(
+        with (
+            tarfile.open(path, "r:gz") as source,
+            temporary.open("wb") as raw_output,
+            gzip.GzipFile(
                 filename="",
                 mode="wb",
                 fileobj=raw_output,
                 compresslevel=9,
                 mtime=source_date_epoch,
-            ) as gzip_output:
-                with tarfile.open(
-                    fileobj=gzip_output,
-                    mode="w|",
-                    format=tarfile.PAX_FORMAT,
-                ) as target:
-                    for member in sorted(source.getmembers(), key=lambda item: item.name):
-                        _validate_member_name(member.name)
-                        if member.issym() or member.islnk():
-                            raise SystemExit(f"release sdist contains link member: {member.name}")
-                        if not member.isfile() and not member.isdir():
-                            raise SystemExit(f"unsupported sdist member type: {member.name}")
+            ) as gzip_output,
+            tarfile.open(
+                fileobj=gzip_output,
+                mode="w|",
+                format=tarfile.PAX_FORMAT,
+            ) as target,
+        ):
+            for member in sorted(source.getmembers(), key=lambda item: item.name):
+                _validate_member_name(member.name)
+                if member.issym() or member.islnk():
+                    raise SystemExit(f"release sdist contains link member: {member.name}")
+                if not member.isfile() and not member.isdir():
+                    raise SystemExit(f"unsupported sdist member type: {member.name}")
 
-                        normalized = tarfile.TarInfo(member.name)
-                        normalized.type = tarfile.DIRTYPE if member.isdir() else tarfile.REGTYPE
-                        normalized.mode = _normalized_mode(member)
-                        normalized.mtime = source_date_epoch
-                        normalized.uid = 0
-                        normalized.gid = 0
-                        normalized.uname = ""
-                        normalized.gname = ""
-                        normalized.pax_headers = {}
+                normalized = tarfile.TarInfo(member.name)
+                normalized.type = tarfile.DIRTYPE if member.isdir() else tarfile.REGTYPE
+                normalized.mode = _normalized_mode(member)
+                normalized.mtime = source_date_epoch
+                normalized.uid = 0
+                normalized.gid = 0
+                normalized.uname = ""
+                normalized.gname = ""
+                normalized.pax_headers = {}
 
-                        if member.isfile():
-                            extracted = source.extractfile(member)
-                            if extracted is None:
-                                raise SystemExit(
-                                    f"unable to canonicalize sdist member: {member.name}"
-                                )
-                            payload = extracted.read()
-                            normalized.size = len(payload)
-                            target.addfile(normalized, io.BytesIO(payload))
-                        else:
-                            normalized.size = 0
-                            target.addfile(normalized)
+                if member.isfile():
+                    extracted = source.extractfile(member)
+                    if extracted is None:
+                        raise SystemExit(f"unable to canonicalize sdist member: {member.name}")
+                    payload = extracted.read()
+                    normalized.size = len(payload)
+                    target.addfile(normalized, io.BytesIO(payload))
+                else:
+                    normalized.size = 0
+                    target.addfile(normalized)
 
         os.replace(temporary, path)
     finally:
