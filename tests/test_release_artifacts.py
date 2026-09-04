@@ -1,7 +1,21 @@
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import pytest
-from scripts.check_release_artifacts import _validate_member_name, _verify_reproducible
+
+
+def _load_release_artifacts_script():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "check_release_artifacts.py"
+    spec = spec_from_file_location("trustflow_release_artifacts_script", path)
+    assert spec is not None and spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_release_artifacts = _load_release_artifacts_script()
+_validate_member_name = getattr(_release_artifacts, "_validate_member_name")
+_verify_reproducible = getattr(_release_artifacts, "_verify_reproducible")
 
 
 def test_release_member_paths_reject_traversal_and_sensitive_payloads() -> None:
