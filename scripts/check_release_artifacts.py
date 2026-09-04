@@ -392,6 +392,20 @@ def _release_toolchain_evidence(
     }
 
 
+def _resolve_safe_output_directory(
+    path: Path,
+    *,
+    working_directory: Path | None = None,
+) -> Path:
+    root = (working_directory or Path.cwd()).resolve()
+    output = path.resolve()
+    if output == root or root not in output.parents:
+        raise SystemExit(
+            "release output directory must be a strict descendant of the working directory"
+        )
+    return output
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("first", type=Path)
@@ -404,6 +418,7 @@ def main() -> None:
     parser.add_argument("--tag")
     args = parser.parse_args()
 
+    output_dir = _resolve_safe_output_directory(args.output_dir)
     version = _project_version()
     expected_tag = f"v{version}"
     if args.tag is not None and args.tag != expected_tag:
@@ -445,21 +460,21 @@ def main() -> None:
         else:
             _validate_sdist(path)
 
-    if args.output_dir.exists():
-        shutil.rmtree(args.output_dir)
-    args.output_dir.mkdir(parents=True)
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True)
     copied: list[Path] = []
     for name in sorted(first):
-        destination = args.output_dir / name
+        destination = output_dir / name
         shutil.copy2(first[name], destination)
         copied.append(destination)
 
-    constraints_destination = args.output_dir / args.toolchain_constraints.name
+    constraints_destination = output_dir / args.toolchain_constraints.name
     shutil.copy2(args.toolchain_constraints, constraints_destination)
     if _sha256(constraints_destination) != constraints_sha256:
         raise SystemExit("retained release toolchain constraints changed during copy")
 
-    checksum_path = args.output_dir / "SHA256SUMS"
+    checksum_path = output_dir / "SHA256SUMS"
     _write_checksums([*copied, constraints_destination], checksum_path)
     compatibility_lock = json.loads(
         Path("compatibility/v0.1-contract.json").read_text(encoding="utf-8")
@@ -506,7 +521,7 @@ def main() -> None:
             for path in copied
         },
     }
-    evidence_path = args.output_dir / "release-evidence.json"
+    evidence_path = output_dir / "release-evidence.json"
     evidence_path.write_text(
         json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
