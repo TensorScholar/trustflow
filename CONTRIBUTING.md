@@ -53,17 +53,19 @@ Before publishing a release:
 - Ruff, strict mypy, pytest/coverage, security checks, schema reproducibility, the v0.1 compatibility contract, demo and `pip-audit` must pass;
 - a real candidate tag must match package metadata and point at the current `main` tip;
 - the live GitHub evidence smoke must pass on the release source;
+- artifact production must use the exact release Python and package pins in `release-toolchain-constraints.txt`, including isolated PEP 517 build dependencies;
 - two independent clean source snapshots must produce byte-identical retained wheel/sdist artifacts after deterministic sdist metadata canonicalization;
-- sdist canonicalization must preserve the exact member set and payload hashes, and the retained canonical sdist must rebuild the exact retained wheel;
-- release distributions must pass archive-safety inspection, `twine check`, wheel install smoke, and SHA-256 checksum generation;
-- the retained `release-evidence.json` must bind artifact hashes, normalization policy, and raw-build observations to the exact source commit and compatibility lock;
+- sdist canonicalization must preserve the exact member set and payload hashes, and the retained canonical sdist must rebuild the exact retained wheel under the same release lock;
+- release distributions and the retained toolchain lock must pass archive/evidence integrity checks and SHA-256 checksum generation;
+- distributions must also pass `twine check`, wheel reinstall, and installed-package smoke validation;
+- the retained `release-evidence.json` must bind artifact hashes, normalization policy, raw-build observations, exact toolchain provenance, source commit, and compatibility lock;
 - CodeQL and the performance probe must pass for a real release tag before publication is authorized;
 - no customer data, credentials or machine-local artifacts may be included;
 - release notes must state residual limitations accurately.
 
-Every pull request executes the release workflow as a non-publishing dry run because changes across the repository can affect the packaged source distribution. See [release engineering](docs/release-engineering.md) for the exact evidence bundle, normalization boundary, and source eligibility rules.
+Every pull request executes the release workflow as a non-publishing dry run because changes across the repository can affect the packaged source distribution. See [release engineering](docs/release-engineering.md) for the exact evidence bundle, normalization boundary, toolchain lock, and source eligibility rules.
 
-The reproducibility claim is intentionally limited to repeat builds under the recorded same-run GitHub Actions environment. It is not a universal cross-platform or cross-toolchain reproducibility claim.
+The reproducibility claim is intentionally limited to repeat builds under the exact recorded release toolchain and GitHub Actions runner family. It is not a universal cross-platform, cross-Python, runner-image, or arbitrary-toolchain reproducibility claim.
 
 PyPI publication remains manual for the `0.1` line and is not authorized merely by a successful build artifact.
 
