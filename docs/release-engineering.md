@@ -7,12 +7,13 @@ TrustFlow treats release artifacts as evidence-bearing outputs, not as permissio
 A real release build (`v*` tag push or manual release dispatch) must satisfy all of the following:
 
 - the requested tag is exactly `v<project.version>`;
+- the named Git tag ref exists and dereferences to the checked-out source commit;
 - `pyproject.toml`, `src/trustflow/_version.py`, `CITATION.cff`, `CHANGELOG.md`, and the README agree on the release version where applicable;
 - the checked-out source commit is exactly the current `origin/main` tip;
 - the worktree is clean;
 - the v0.1 compatibility lock verifies.
 
-The main-tip requirement deliberately rejects tags cut from stale, side-branch, or otherwise unmerged commits even when their version text matches.
+The main-tip and tag-ref requirements deliberately reject tags cut from stale, side-branch, otherwise unmerged, missing, or differently targeted commits even when their version text matches. Annotated tags are dereferenced to their commit before comparison.
 
 ## Release quality gates
 
@@ -66,7 +67,7 @@ The bundle is stored as a GitHub Actions artifact. Artifact ZIP container digest
 
 Every pull request runs the release workflow in dry-run mode. A dry run exercises the same quality, live-source smoke, release-toolchain validation, independent double-build, sdist normalization, exact retained-artifact comparison, canonical-sdist rebuild, archive-safety, checksum, install, and smoke-test path but does not require a tag and does not publish anything.
 
-Manual workflow dispatch remains build-only. It requires an explicit candidate tag and the selected source must still be the current main tip.
+Manual workflow dispatch remains build-only. It requires an explicit candidate tag; the named tag must exist and dereference to the selected source, and that same source must still be the current main tip.
 
 ## Non-claims and publication boundary
 
