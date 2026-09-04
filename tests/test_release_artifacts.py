@@ -1,3 +1,4 @@
+import gzip
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import ModuleType
@@ -15,6 +16,7 @@ def _load_release_artifacts_script() -> ModuleType:
 
 
 _release_artifacts = _load_release_artifacts_script()
+_sdist_difference_summary = _release_artifacts._sdist_difference_summary
 _validate_member_name = _release_artifacts._validate_member_name
 _verify_reproducible = _release_artifacts._verify_reproducible
 
@@ -55,3 +57,15 @@ def test_reproducibility_check_rejects_filename_drift(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit, match="filenames differ"):
         _verify_reproducible({first.name: first}, {second.name: second})
+
+
+def test_sdist_diagnostics_identifies_gzip_wrapper_drift(tmp_path: Path) -> None:
+    first = tmp_path / "first.tar.gz"
+    second = tmp_path / "second.tar.gz"
+    first.write_bytes(gzip.compress(b"same tar stream", mtime=1))
+    second.write_bytes(gzip.compress(b"same tar stream", mtime=2))
+
+    summary = _sdist_difference_summary(first, second)
+
+    assert "gzip wrapper drift" in summary
+    assert "mtime=1 != 2" in summary
