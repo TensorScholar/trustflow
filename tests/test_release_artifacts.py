@@ -15,8 +15,8 @@ def _load_release_artifacts_script() -> ModuleType:
 
 
 _release_artifacts = _load_release_artifacts_script()
-_validate_member_name = getattr(_release_artifacts, "_validate_member_name")
-_verify_reproducible = getattr(_release_artifacts, "_verify_reproducible")
+_validate_member_name = _release_artifacts._validate_member_name
+_verify_reproducible = _release_artifacts._verify_reproducible
 
 
 def test_release_member_paths_reject_traversal_and_sensitive_payloads() -> None:
