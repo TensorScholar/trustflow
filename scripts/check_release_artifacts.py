@@ -135,7 +135,9 @@ def _sdist_difference_summary(first: Path, second: Path) -> str:
         second_entry = second_manifest[name]
         if first_entry["payload_sha256"] != second_entry["payload_sha256"]:
             payload_drift.append(name)
-        first_metadata = {key: value for key, value in first_entry.items() if key != "payload_sha256"}
+        first_metadata = {
+            key: value for key, value in first_entry.items() if key != "payload_sha256"
+        }
         second_metadata = {
             key: value for key, value in second_entry.items() if key != "payload_sha256"
         }
