@@ -29,9 +29,7 @@ RELEASE_TOOLCHAIN_DISTRIBUTIONS = (
     "twine",
     "wheel",
 )
-EXACT_CONSTRAINT = re.compile(
-    r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]*)$"
-)
+EXACT_CONSTRAINT = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]*)$")
 
 
 def _sha256(path: Path) -> str:
