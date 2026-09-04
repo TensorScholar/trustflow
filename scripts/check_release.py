@@ -52,7 +52,9 @@ def validate_release(tag: str | None, *, require_main_tip: bool) -> str:
         except subprocess.CalledProcessError as exc:
             raise SystemExit("origin/main is unavailable for release source verification") from exc
         if head != main_tip:
-            raise SystemExit(f"release source is not current main tip: HEAD={head}, main={main_tip}")
+            raise SystemExit(
+                f"release source is not current main tip: HEAD={head}, main={main_tip}"
+            )
 
     status = _git("status", "--porcelain", "--untracked-files=all")
     if status:
