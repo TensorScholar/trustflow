@@ -1,10 +1,11 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 
-def _load_release_script():
+def _load_release_script() -> ModuleType:
     path = Path(__file__).resolve().parents[1] / "scripts" / "check_release.py"
     spec = spec_from_file_location("trustflow_release_script", path)
     assert spec is not None and spec.loader is not None
