@@ -9,8 +9,8 @@ import shutil
 import tarfile
 import tomllib
 import zipfile
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 FORBIDDEN_SUFFIXES = (".db", ".env", ".key", ".p12", ".pem", ".sqlite", ".sqlite3")
 
