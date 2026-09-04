@@ -20,10 +20,13 @@ def _load_release_artifacts_script() -> ModuleType:
 _release_artifacts = _load_release_artifacts_script()
 _canonicalize_sdist = _release_artifacts._canonicalize_sdist
 _gzip_header_mtime = _release_artifacts._gzip_header_mtime
+_load_exact_constraints = _release_artifacts._load_exact_constraints
 _sdist_difference_summary = _release_artifacts._sdist_difference_summary
 _tar_manifest = _release_artifacts._tar_manifest
 _validate_member_name = _release_artifacts._validate_member_name
+_validate_toolchain_versions = _release_artifacts._validate_toolchain_versions
 _verify_reproducible = _release_artifacts._verify_reproducible
+RELEASE_TOOLCHAIN_DISTRIBUTIONS = _release_artifacts.RELEASE_TOOLCHAIN_DISTRIBUTIONS
 
 
 def _write_test_sdist(
@@ -84,6 +87,10 @@ def _write_link_sdist(path: Path) -> None:
         link.type = tarfile.SYMTYPE
         link.linkname = "../outside"
         archive.addfile(link)
+
+
+def _toolchain_pins(version: str = "1.0") -> dict[str, str]:
+    return {name: version for name in RELEASE_TOOLCHAIN_DISTRIBUTIONS}
 
 
 def test_release_member_paths_reject_traversal_and_sensitive_payloads() -> None:
@@ -185,3 +192,66 @@ def test_sdist_canonicalization_rejects_links(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit, match="link member"):
         _canonicalize_sdist(path, source_date_epoch=123)
+
+
+def test_release_toolchain_constraints_require_exact_complete_lock(tmp_path: Path) -> None:
+    path = tmp_path / "constraints.txt"
+    pins = _toolchain_pins()
+    path.write_text("\n".join(f"{name}=={version}" for name, version in pins.items()) + "\n")
+
+    assert _load_exact_constraints(path) == dict(sorted(pins.items()))
+
+    ranged = path.read_text(encoding="utf-8").replace("build==1.0", "build>=1.0")
+    path.write_text(ranged, encoding="utf-8")
+    with pytest.raises(SystemExit, match="exact == pin"):
+        _load_exact_constraints(path)
+
+    incomplete = _toolchain_pins()
+    incomplete.pop("wheel")
+    path.write_text(
+        "\n".join(f"{name}=={version}" for name, version in incomplete.items()) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match="must pin exactly"):
+        _load_exact_constraints(path)
+
+
+def test_release_toolchain_constraints_reject_duplicate_pin(tmp_path: Path) -> None:
+    path = tmp_path / "constraints.txt"
+    pins = _toolchain_pins()
+    lines = [f"{name}=={version}" for name, version in pins.items()]
+    lines.append("wheel==1.0")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="duplicate release toolchain constraint"):
+        _load_exact_constraints(path)
+
+
+def test_release_toolchain_version_validation_fails_closed() -> None:
+    pins = _toolchain_pins()
+    observed = pins.copy()
+
+    _validate_toolchain_versions(
+        pins,
+        observed,
+        python_version="3.12.14",
+        expected_python_version="3.12.14",
+    )
+
+    mismatched = observed.copy()
+    mismatched["wheel"] = "2.0"
+    with pytest.raises(SystemExit, match="release toolchain version mismatch"):
+        _validate_toolchain_versions(
+            pins,
+            mismatched,
+            python_version="3.12.14",
+            expected_python_version="3.12.14",
+        )
+
+    with pytest.raises(SystemExit, match="release Python version mismatch"):
+        _validate_toolchain_versions(
+            pins,
+            observed,
+            python_version="3.12.15",
+            expected_python_version="3.12.14",
+        )

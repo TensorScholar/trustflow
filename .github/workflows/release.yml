@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_PYTHON_VERSION: "3.12.14"
+  RELEASE_TOOLCHAIN_CONSTRAINTS: release-toolchain-constraints.txt
+
 concurrency:
   group: release-evidence-${{ github.ref }}
   cancel-in-progress: false
@@ -83,10 +87,15 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
-          python-version: "3.12"
+          python-version: ${{ env.RELEASE_PYTHON_VERSION }}
           cache: pip
-      - run: python -m pip install --upgrade pip "setuptools>=83.0.0" wheel
-      - run: python -m pip install -e '.[release]'
+      - run: >-
+          python -m pip install --upgrade
+          -c "$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          pip setuptools wheel
+      - run: python -m pip install -c "$RELEASE_TOOLCHAIN_CONSTRAINTS" -e '.[release]'
+        env:
+          PIP_BUILD_CONSTRAINT: ${{ github.workspace }}/release-toolchain-constraints.txt
       - name: Validate release metadata for PR dry run
         if: github.event_name == 'pull_request'
         run: python scripts/check_release.py
@@ -114,9 +123,17 @@ jobs:
           echo "RELEASE_SOURCE_A=$SOURCE_A" >> "$GITHUB_ENV"
           echo "RELEASE_SOURCE_B=$SOURCE_B" >> "$GITHUB_ENV"
       - name: Build first independent distribution set
-        run: python -m build --outdir "$GITHUB_WORKSPACE/dist-a" "$RELEASE_SOURCE_A"
+        run: >-
+          python -m build
+          --dependency-constraints-txt "$GITHUB_WORKSPACE/$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --outdir "$GITHUB_WORKSPACE/dist-a"
+          "$RELEASE_SOURCE_A"
       - name: Build second independent distribution set
-        run: python -m build --outdir "$GITHUB_WORKSPACE/dist-b" "$RELEASE_SOURCE_B"
+        run: >-
+          python -m build
+          --dependency-constraints-txt "$GITHUB_WORKSPACE/$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --outdir "$GITHUB_WORKSPACE/dist-b"
+          "$RELEASE_SOURCE_B"
       - name: Verify reproducible distributions for PR dry run
         if: github.event_name == 'pull_request'
         run: >-
@@ -124,6 +141,8 @@ jobs:
           --output-dir dist
           --source-commit "$SOURCE_COMMIT"
           --source-date-epoch "$SOURCE_DATE_EPOCH"
+          --toolchain-constraints "$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --expected-python-version "$RELEASE_PYTHON_VERSION"
       - name: Verify reproducible tagged distributions
         if: github.event_name != 'pull_request'
         run: >-
@@ -131,11 +150,17 @@ jobs:
           --output-dir dist
           --source-commit "$SOURCE_COMMIT"
           --source-date-epoch "$SOURCE_DATE_EPOCH"
+          --toolchain-constraints "$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --expected-python-version "$RELEASE_PYTHON_VERSION"
           --tag "$RELEASE_TAG"
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       - name: Rebuild wheel from retained canonical sdist
-        run: python -m build --outdir dist-from-sdist dist/*.tar.gz
+        run: >-
+          python -m build
+          --dependency-constraints-txt "$GITHUB_WORKSPACE/$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --outdir dist-from-sdist
+          dist/*.tar.gz
       - name: Verify canonical sdist rebuild matches retained wheel
         run: cmp --silent dist/*.whl dist-from-sdist/*.whl
       - run: python -m twine check dist/*.whl dist/*.tar.gz

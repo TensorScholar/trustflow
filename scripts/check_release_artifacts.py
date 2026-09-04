@@ -8,15 +8,30 @@ import hashlib
 import io
 import json
 import os
+import platform
+import re
 import shutil
 import tarfile
 import tomllib
 import zipfile
 from collections.abc import Iterable
+from importlib import metadata
 from pathlib import Path, PurePosixPath
 
 FORBIDDEN_SUFFIXES = (".db", ".env", ".key", ".p12", ".pem", ".sqlite", ".sqlite3")
 SDIST_NORMALIZATION_VERSION = 1
+RELEASE_TOOLCHAIN_DISTRIBUTIONS = (
+    "build",
+    "packaging",
+    "pip",
+    "pyproject-hooks",
+    "setuptools",
+    "twine",
+    "wheel",
+)
+EXACT_CONSTRAINT = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9][A-Za-z0-9.!+_-]*)$"
+)
 
 
 def _sha256(path: Path) -> str:
@@ -280,6 +295,105 @@ def _write_checksums(paths: Iterable[Path], output: Path) -> None:
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _canonical_distribution_name(name: str) -> str:
+    return name.lower().replace("_", "-")
+
+
+def _load_exact_constraints(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        raise SystemExit(f"release toolchain constraints file is missing: {path}")
+
+    pins: dict[str, str] = {}
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        match = EXACT_CONSTRAINT.fullmatch(line)
+        if match is None:
+            raise SystemExit(
+                "release toolchain constraint must be an exact == pin at "
+                f"{path}:{line_number}: {line}"
+            )
+        name = _canonical_distribution_name(match.group(1))
+        if name in pins:
+            raise SystemExit(f"duplicate release toolchain constraint: {name}")
+        pins[name] = match.group(2)
+
+    expected = set(RELEASE_TOOLCHAIN_DISTRIBUTIONS)
+    actual = set(pins)
+    if actual != expected:
+        raise SystemExit(
+            "release toolchain constraints must pin exactly "
+            f"{sorted(expected)}; missing={sorted(expected - actual)}, "
+            f"unexpected={sorted(actual - expected)}"
+        )
+    return dict(sorted(pins.items()))
+
+
+def _validate_toolchain_versions(
+    pins: dict[str, str],
+    observed: dict[str, str],
+    *,
+    python_version: str,
+    expected_python_version: str,
+) -> None:
+    if python_version != expected_python_version:
+        raise SystemExit(
+            "release Python version mismatch: "
+            f"expected {expected_python_version}, observed {python_version}"
+        )
+    mismatches = {
+        name: {"expected": pins[name], "observed": observed.get(name)}
+        for name in RELEASE_TOOLCHAIN_DISTRIBUTIONS
+        if observed.get(name) != pins[name]
+    }
+    if mismatches:
+        raise SystemExit(f"release toolchain version mismatch: {mismatches}")
+
+
+def _release_toolchain_evidence(
+    constraints_path: Path,
+    *,
+    expected_python_version: str,
+) -> dict[str, object]:
+    pins = _load_exact_constraints(constraints_path)
+    observed: dict[str, str] = {}
+    for distribution in RELEASE_TOOLCHAIN_DISTRIBUTIONS:
+        try:
+            observed[distribution] = metadata.version(distribution)
+        except metadata.PackageNotFoundError as exc:
+            raise SystemExit(
+                f"release toolchain distribution is not installed: {distribution}"
+            ) from exc
+
+    python_version = platform.python_version()
+    _validate_toolchain_versions(
+        pins,
+        observed,
+        python_version=python_version,
+        expected_python_version=expected_python_version,
+    )
+    return {
+        "python": {
+            "expected": expected_python_version,
+            "observed": python_version,
+        },
+        "constraints": {
+            "name": constraints_path.name,
+            "sha256": _sha256(constraints_path),
+            "size_bytes": constraints_path.stat().st_size,
+            "pins": pins,
+        },
+        "observed_distributions": dict(sorted(observed.items())),
+        "runner": {
+            "os": os.environ.get("RUNNER_OS"),
+            "arch": os.environ.get("RUNNER_ARCH"),
+            "image_os": os.environ.get("ImageOS"),
+            "image_version": os.environ.get("ImageVersion"),
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("first", type=Path)
@@ -287,6 +401,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("dist"))
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--source-date-epoch", required=True, type=int)
+    parser.add_argument("--toolchain-constraints", type=Path, required=True)
+    parser.add_argument("--expected-python-version", required=True)
     parser.add_argument("--tag")
     args = parser.parse_args()
 
@@ -294,6 +410,12 @@ def main() -> None:
     expected_tag = f"v{version}"
     if args.tag is not None and args.tag != expected_tag:
         raise SystemExit(f"tag mismatch: expected {expected_tag}, got {args.tag}")
+
+    toolchain = _release_toolchain_evidence(
+        args.toolchain_constraints,
+        expected_python_version=args.expected_python_version,
+    )
+    constraints_sha256 = _sha256(args.toolchain_constraints)
 
     first = _distribution_files(args.first)
     second = _distribution_files(args.second)
@@ -334,8 +456,13 @@ def main() -> None:
         shutil.copy2(first[name], destination)
         copied.append(destination)
 
+    constraints_destination = args.output_dir / args.toolchain_constraints.name
+    shutil.copy2(args.toolchain_constraints, constraints_destination)
+    if _sha256(constraints_destination) != constraints_sha256:
+        raise SystemExit("retained release toolchain constraints changed during copy")
+
     checksum_path = args.output_dir / "SHA256SUMS"
-    _write_checksums(copied, checksum_path)
+    _write_checksums([*copied, constraints_destination], checksum_path)
     compatibility_lock = json.loads(
         Path("compatibility/v0.1-contract.json").read_text(encoding="utf-8")
     )
@@ -348,8 +475,12 @@ def main() -> None:
         "source_commit": args.source_commit,
         "source_date_epoch": args.source_date_epoch,
         "compatibility_contract": compatibility_lock,
+        "toolchain": toolchain,
         "reproducibility": {
-            "scope": "same-run double build; no cross-platform reproducibility claim",
+            "scope": (
+                "same-run double build from independent source snapshots under the "
+                "recorded release toolchain; no cross-platform reproducibility claim"
+            ),
             "raw_artifact_sha256": {
                 "first": raw_first_hashes,
                 "second": raw_second_hashes,
@@ -380,6 +511,11 @@ def main() -> None:
     evidence_path = args.output_dir / "release-evidence.json"
     evidence_path.write_text(
         json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(
+        "release toolchain verified: "
+        f"Python {platform.python_version()}, "
+        f"pins={toolchain['observed_distributions']}"
     )
     print(f"raw build byte equality: {raw_byte_equal}")
     if raw_sdist_diagnostics:

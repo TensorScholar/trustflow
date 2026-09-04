@@ -15,6 +15,8 @@
   source-bound release evidence manifests.
 - Added a retained-sdist rebuild check requiring the canonical source distribution to reproduce
   the exact retained wheel under the recorded release environment.
+- Pinned the release-only Python/frontend/backend toolchain with a retained constraints lock and
+  bound exact toolchain provenance into release evidence.
 - Configured CodeQL and the retrieval performance probe to run on release-tag pushes.
 
 ## 0.1.0rc2
