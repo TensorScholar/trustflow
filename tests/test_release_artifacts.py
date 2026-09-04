@@ -34,8 +34,12 @@ def test_release_member_paths_accept_normal_package_files() -> None:
 
 
 def test_reproducibility_check_rejects_byte_drift(tmp_path: Path) -> None:
-    first = tmp_path / "first.whl"
-    second = tmp_path / "second.whl"
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first = first_dir / "package.whl"
+    second = second_dir / "package.whl"
     first.write_bytes(b"first")
     second.write_bytes(b"second")
 
