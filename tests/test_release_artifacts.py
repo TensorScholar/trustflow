@@ -21,6 +21,7 @@ _release_artifacts = _load_release_artifacts_script()
 _canonicalize_sdist = _release_artifacts._canonicalize_sdist
 _gzip_header_mtime = _release_artifacts._gzip_header_mtime
 _load_exact_constraints = _release_artifacts._load_exact_constraints
+_release_toolchain_evidence = _release_artifacts._release_toolchain_evidence
 _sdist_difference_summary = _release_artifacts._sdist_difference_summary
 _tar_manifest = _release_artifacts._tar_manifest
 _validate_member_name = _release_artifacts._validate_member_name
@@ -255,3 +256,33 @@ def test_release_toolchain_version_validation_fails_closed() -> None:
             python_version="3.12.15",
             expected_python_version="3.12.14",
         )
+
+
+def test_release_toolchain_evidence_preserves_github_runner_image_variables(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    constraints = tmp_path / "constraints.txt"
+    pins = _toolchain_pins()
+    constraints.write_text(
+        "\n".join(f"{name}=={version}" for name, version in pins.items()) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_release_artifacts.metadata, "version", lambda _name: "1.0")
+    monkeypatch.setattr(_release_artifacts.platform, "python_version", lambda: "3.12.14")
+    monkeypatch.setenv("RUNNER_OS", "Linux")
+    monkeypatch.setenv("RUNNER_ARCH", "X64")
+    monkeypatch.setenv("ImageOS", "ubuntu24")
+    monkeypatch.setenv("ImageVersion", "20260831.293.1")
+
+    evidence = _release_toolchain_evidence(
+        constraints,
+        expected_python_version="3.12.14",
+    )
+
+    assert evidence["runner"] == {
+        "os": "Linux",
+        "arch": "X64",
+        "image_os": "ubuntu24",
+        "image_version": "20260831.293.1",
+    }
