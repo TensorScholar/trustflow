@@ -107,6 +107,7 @@ See [architecture](docs/architecture.md) and [ADR 0001](docs/adr/0001-modular-mo
 ## Documentation
 
 - [Architecture and integration contracts](docs/architecture.md)
+- [v0.1 compatibility contract](docs/compatibility.md)
 - [Source-change revalidation and governance metrics](docs/revalidation-and-metrics.md)
 - [GitHub evidence source](docs/integrations/github.md)
 - [Supported document formats](docs/formats.md)
