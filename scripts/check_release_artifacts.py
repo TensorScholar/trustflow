@@ -386,8 +386,8 @@ def _release_toolchain_evidence(
         "runner": {
             "os": os.environ.get("RUNNER_OS"),
             "arch": os.environ.get("RUNNER_ARCH"),
-            "image_os": os.environ.get("ImageOS"),
-            "image_version": os.environ.get("ImageVersion"),
+            "image_os": os.environ.get("ImageOS"),  # noqa: SIM112
+            "image_version": os.environ.get("ImageVersion"),  # noqa: SIM112
         },
     }
 
