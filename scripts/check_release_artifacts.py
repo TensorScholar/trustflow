@@ -68,9 +68,7 @@ def _validate_sdist(path: Path) -> None:
 
 def _verify_reproducible(first: dict[str, Path], second: dict[str, Path]) -> None:
     if set(first) != set(second):
-        raise SystemExit(
-            f"release build filenames differ: {sorted(first)} != {sorted(second)}"
-        )
+        raise SystemExit(f"release build filenames differ: {sorted(first)} != {sorted(second)}")
     mismatches = [name for name in sorted(first) if _sha256(first[name]) != _sha256(second[name])]
     if mismatches:
         raise SystemExit(f"release distributions are not byte-reproducible: {mismatches}")
