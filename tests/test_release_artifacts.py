@@ -42,29 +42,40 @@ def _write_test_sdist(
     if reverse:
         members.reverse()
 
-    with path.open("wb") as raw:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=gzip_mtime) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w|", format=tarfile.PAX_FORMAT) as archive:
-                for name, payload, mode in members:
-                    info = tarfile.TarInfo(name)
-                    info.mtime = member_mtime
-                    info.uid = uid
-                    info.gid = uid + 1
-                    info.uname = f"user-{uid}"
-                    info.gname = f"group-{uid}"
-                    info.mode = mode
-                    info.pax_headers = {
-                        "atime": str(member_mtime + 1),
-                        "ctime": str(member_mtime + 2),
-                    }
-                    if payload is None:
-                        info.type = tarfile.DIRTYPE
-                        info.size = 0
-                        archive.addfile(info)
-                    else:
-                        info.type = tarfile.REGTYPE
-                        info.size = len(payload)
-                        archive.addfile(info, io.BytesIO(payload))
+    with (
+        path.open("wb") as raw,
+        gzip.GzipFile(
+            filename="",
+            mode="wb",
+            fileobj=raw,
+            mtime=gzip_mtime,
+        ) as compressed,
+        tarfile.open(
+            fileobj=compressed,
+            mode="w|",
+            format=tarfile.PAX_FORMAT,
+        ) as archive,
+    ):
+        for name, payload, mode in members:
+            info = tarfile.TarInfo(name)
+            info.mtime = member_mtime
+            info.uid = uid
+            info.gid = uid + 1
+            info.uname = f"user-{uid}"
+            info.gname = f"group-{uid}"
+            info.mode = mode
+            info.pax_headers = {
+                "atime": str(member_mtime + 1),
+                "ctime": str(member_mtime + 2),
+            }
+            if payload is None:
+                info.type = tarfile.DIRTYPE
+                info.size = 0
+                archive.addfile(info)
+            else:
+                info.type = tarfile.REGTYPE
+                info.size = len(payload)
+                archive.addfile(info, io.BytesIO(payload))
 
 
 def _write_link_sdist(path: Path) -> None:
