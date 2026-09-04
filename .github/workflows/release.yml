@@ -1,16 +1,68 @@
-name: Release build
+name: Release evidence build
 
 on:
+  pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact candidate tag, for example v0.1.0rc2"
+        required: true
+        type: string
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
 
+env:
+  RELEASE_PYTHON_VERSION: "3.12.14"
+  RELEASE_TOOLCHAIN_CONSTRAINTS: release-toolchain-constraints.txt
+
+concurrency:
+  group: release-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  quality:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip "setuptools>=83.0.0" wheel
+      - run: python -m pip install -e '.[dev,web]'
+      - name: Validate release metadata for PR dry run
+        if: github.event_name == 'pull_request'
+        run: python scripts/check_release.py
+      - name: Validate tagged release source
+        if: github.event_name != 'pull_request'
+        run: python scripts/check_release.py --tag "$RELEASE_TAG" --require-main-tip
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      - run: ruff format --check .
+      - run: ruff check .
+      - run: mypy src/trustflow
+      - run: python scripts/check_architecture.py
+      - run: python scripts/security_scan.py
+      - run: python scripts/secret_scan.py
+      - run: python scripts/generate_schemas.py
+      - run: git diff --exit-code -- schemas
+      - run: python scripts/check_contract.py
+      - run: pytest --cov=trustflow --cov-branch
+      - run: trustflow demo
+      - run: python -m pip_audit
+
+  github-evidence-smoke:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -20,25 +72,103 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install --upgrade pip "setuptools>=83.0.0" wheel
-      - run: python -m pip install -e '.[dev,web,release]'
-      - run: python scripts/check_release.py --tag "${GITHUB_REF_NAME}"
-      - run: ruff format --check .
-      - run: ruff check .
-      - run: mypy src/trustflow
-      - run: python scripts/check_architecture.py
-      - run: python scripts/security_scan.py
-      - run: python scripts/secret_scan.py
-      - run: python scripts/generate_schemas.py
-      - run: git diff --exit-code -- schemas
-      - run: pytest --cov=trustflow --cov-branch
-      - run: trustflow demo
-      - run: python -m pip_audit
-      - run: python -m build
-      - run: python -m twine check dist/*
+      - run: python -m pip install -e '.[github]'
+      - run: python scripts/github_source_smoke.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  build:
+    needs: [quality, github-evidence-smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: ${{ env.RELEASE_PYTHON_VERSION }}
+          cache: pip
+      - run: >-
+          python -m pip install --upgrade
+          -c "$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          pip setuptools wheel
+      - run: python -m pip install -c "$RELEASE_TOOLCHAIN_CONSTRAINTS" -e '.[release]'
+        env:
+          PIP_BUILD_CONSTRAINT: ${{ github.workspace }}/release-toolchain-constraints.txt
+      - name: Validate release metadata for PR dry run
+        if: github.event_name == 'pull_request'
+        run: python scripts/check_release.py
+      - name: Validate tagged release source
+        if: github.event_name != 'pull_request'
+        run: python scripts/check_release.py --tag "$RELEASE_TAG" --require-main-tip
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      - name: Resolve deterministic source context
+        run: |
+          echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+      - name: Prepare independent clean source snapshots
+        run: |
+          SOURCE_ARCHIVE="$RUNNER_TEMP/release-source.tar"
+          SOURCE_A="$RUNNER_TEMP/release-source-a"
+          SOURCE_B="$RUNNER_TEMP/release-source-b"
+          rm -rf "$SOURCE_A" "$SOURCE_B" "$SOURCE_ARCHIVE"
+          mkdir -p "$SOURCE_A" "$SOURCE_B"
+          git archive --format=tar --output="$SOURCE_ARCHIVE" "$SOURCE_COMMIT"
+          tar -xf "$SOURCE_ARCHIVE" -C "$SOURCE_A"
+          tar -xf "$SOURCE_ARCHIVE" -C "$SOURCE_B"
+          find "$SOURCE_A" "$SOURCE_B" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+          diff -qr "$SOURCE_A" "$SOURCE_B"
+          echo "RELEASE_SOURCE_A=$SOURCE_A" >> "$GITHUB_ENV"
+          echo "RELEASE_SOURCE_B=$SOURCE_B" >> "$GITHUB_ENV"
+      - name: Build first independent distribution set
+        run: >-
+          python -m build
+          --dependency-constraints-txt "$GITHUB_WORKSPACE/$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --outdir "$GITHUB_WORKSPACE/dist-a"
+          "$RELEASE_SOURCE_A"
+      - name: Build second independent distribution set
+        run: >-
+          python -m build
+          --dependency-constraints-txt "$GITHUB_WORKSPACE/$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --outdir "$GITHUB_WORKSPACE/dist-b"
+          "$RELEASE_SOURCE_B"
+      - name: Verify reproducible distributions for PR dry run
+        if: github.event_name == 'pull_request'
+        run: >-
+          python scripts/check_release_artifacts.py dist-a dist-b
+          --output-dir dist
+          --source-commit "$SOURCE_COMMIT"
+          --source-date-epoch "$SOURCE_DATE_EPOCH"
+          --toolchain-constraints "$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --expected-python-version "$RELEASE_PYTHON_VERSION"
+      - name: Verify reproducible tagged distributions
+        if: github.event_name != 'pull_request'
+        run: >-
+          python scripts/check_release_artifacts.py dist-a dist-b
+          --output-dir dist
+          --source-commit "$SOURCE_COMMIT"
+          --source-date-epoch "$SOURCE_DATE_EPOCH"
+          --toolchain-constraints "$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --expected-python-version "$RELEASE_PYTHON_VERSION"
+          --tag "$RELEASE_TAG"
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      - name: Rebuild wheel from retained canonical sdist
+        run: >-
+          python -m build
+          --dependency-constraints-txt "$GITHUB_WORKSPACE/$RELEASE_TOOLCHAIN_CONSTRAINTS"
+          --outdir dist-from-sdist
+          dist/*.tar.gz
+      - name: Verify canonical sdist rebuild matches retained wheel
+        run: cmp --silent dist/*.whl dist-from-sdist/*.whl
+      - run: python -m twine check dist/*.whl dist/*.tar.gz
       - run: python -m pip install --force-reinstall --no-deps dist/*.whl
       - run: python scripts/smoke_install.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: distributions
+          name: release-evidence-${{ github.sha }}
           path: dist/*
           if-no-files-found: error
+          retention-days: 30

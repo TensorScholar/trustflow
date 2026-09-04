@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- Added an exact v0.1 compatibility freeze for the public Python, CLI, OpenAPI, model-schema,
+  and SQLite surfaces, with cross-Python canonical contract evidence in CI.
+- Made local evaluation API response schemas explicit and stopped exposing server-side
+  questionnaire source paths through the public questionnaire response.
+- Hardened release builds to require version-consistent metadata, the current main tip, and the
+  exact named tag ref resolving to the checked-out commit for real tag/manual candidates.
+- Added a self-contained Python 3.11/3.12/3.13 release quality matrix, compatibility verification,
+  and live GitHub evidence smoke.
+- Added independent clean-source double builds, deterministic sdist metadata canonicalization,
+  exact retained-artifact comparison, archive payload safety checks, SHA-256 checksums, and
+  source-bound release evidence manifests.
+- Added a retained-sdist rebuild check requiring the canonical source distribution to reproduce
+  the exact retained wheel under the recorded release environment.
+- Pinned the release-only Python/frontend/backend toolchain with a retained constraints lock and
+  bound exact toolchain provenance into release evidence.
+- Configured CodeQL and the retrieval performance probe to run on release-tag pushes.
+
 ## 0.1.0rc2
 
 - Made export fail closed when required reviews are missing, rejected, or unresolved.
