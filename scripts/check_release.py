@@ -56,6 +56,17 @@ def validate_release(tag: str | None, *, require_main_tip: bool) -> str:
                 f"release source is not current main tip: HEAD={head}, main={main_tip}"
             )
 
+        if tag is None:
+            raise SystemExit("tag is required when validating an eligible release source")
+        try:
+            tag_commit = _git("rev-parse", f"refs/tags/{tag}^{{commit}}")
+        except subprocess.CalledProcessError as exc:
+            raise SystemExit(f"release tag ref is unavailable: {tag}") from exc
+        if head != tag_commit:
+            raise SystemExit(
+                f"release tag does not resolve to HEAD: tag={tag_commit}, HEAD={head}"
+            )
+
     status = _git("status", "--porcelain", "--untracked-files=all")
     if status:
         raise SystemExit("release worktree is not clean")
